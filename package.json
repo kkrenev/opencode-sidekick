@@ -31,6 +31,11 @@
     "url": "https://github.com/kkrenev/opencode-sidekick/issues"
   },
   "main": "./out/extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    }
+  },
   "activationEvents": [
     "onView:opencode.sidekick"
   ],
@@ -61,6 +66,18 @@
         "category": "OpenCode"
       },
       {
+        "command": "opencode.sidekick.newSession",
+        "title": "New Session",
+        "category": "OpenCode",
+        "icon": "$(add)"
+      },
+      {
+        "command": "opencode.sidekick.history",
+        "title": "Show Session History",
+        "category": "OpenCode",
+        "icon": "$(history)"
+      },
+      {
         "command": "opencode.sidekick.reload",
         "title": "Reload OpenCode Sidekick",
         "category": "OpenCode",
@@ -82,19 +99,30 @@
     "menus": {
       "view/title": [
         {
-          "command": "opencode.sidekick.reload",
+          "command": "opencode.sidekick.newSession",
           "when": "view == opencode.sidekick",
           "group": "navigation@1"
         },
         {
-          "command": "opencode.sidekick.openInBrowser",
+          "command": "opencode.sidekick.reload",
           "when": "view == opencode.sidekick",
           "group": "navigation@2"
+        },
+        {
+          "command": "opencode.sidekick.openInBrowser",
+          "when": "view == opencode.sidekick",
+          "group": "navigation@3"
         }
       ],
       "commandPalette": [
         {
           "command": "opencode.sidekick.focus"
+        },
+        {
+          "command": "opencode.sidekick.newSession"
+        },
+        {
+          "command": "opencode.sidekick.history"
         },
         {
           "command": "opencode.sidekick.reload"
@@ -110,8 +138,13 @@
     "keybindings": [
       {
         "command": "opencode.sidekick.focus",
-        "key": "ctrl+alt+o",
-        "mac": "cmd+alt+o"
+        "key": "ctrl+alt+shift+o",
+        "mac": "cmd+alt+shift+o"
+      },
+      {
+        "command": "opencode.sidekick.newSession",
+        "key": "ctrl+alt+n",
+        "mac": "cmd+alt+n"
       }
     ],
     "configuration": {

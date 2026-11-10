@@ -5,7 +5,7 @@ import { SidekickViewProvider, VIEW_ID } from './sidekick-view';
 const CONTAINER_ID = 'opencodeSidekickContainer';
 
 export function activate(context: vscode.ExtensionContext): void {
-  const provider = new SidekickViewProvider();
+  const provider = new SidekickViewProvider(context);
 
   context.subscriptions.push(
     provider,
@@ -15,8 +15,16 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('opencode.sidekick.focus', async () => {
       await vscode.commands.executeCommand(`workbench.view.extension.${CONTAINER_ID}`);
     }),
+    vscode.commands.registerCommand('opencode.sidekick.newSession', async () => {
+      await vscode.commands.executeCommand(`workbench.view.extension.${CONTAINER_ID}`);
+      await provider.newSession();
+    }),
+    vscode.commands.registerCommand('opencode.sidekick.history', async () => {
+      await vscode.commands.executeCommand(`workbench.view.extension.${CONTAINER_ID}`);
+      await provider.showHistory();
+    }),
     vscode.commands.registerCommand('opencode.sidekick.reload', async () => {
-      await provider.refresh();
+      await provider.reload();
     }),
     vscode.commands.registerCommand('opencode.sidekick.openInBrowser', async () => {
       const url = provider.browserUrl();

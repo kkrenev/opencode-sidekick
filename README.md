@@ -2,31 +2,39 @@
 
 **The OpenCode agent, docked in the VS Code secondary sidebar.** Your editor keeps its full width, OpenCode sits right next to it, in the same panel where Copilot Chat and Codex live.
 
-![OpenCode Sidekick in the secondary sidebar](assets/sidebar.png)
+![OpenCode Sidekick chat panel](assets/panel-chat.png)
 
 ## The problem it solves
 
 The official opencode extension opens its terminal with `ViewColumn.Beside`. That forces the editor to split into two columns every time you want to talk to your agent: half the screen is code, half is a terminal, and your tabs get squeezed into whatever space is left.
 
-OpenCode Sidekick declares its own container in `secondarySidebar`, so the OpenCode UI opens in the right-hand panel that VS Code already toggles with `Cmd+Option+B`. The editor area is never split.
+OpenCode Sidekick declares its own container in `secondarySidebar`, so OpenCode opens in the right-hand panel that VS Code already toggles with `Cmd+Option+B`. The editor area is never split, and the panel is a real chat UI instead of a terminal emulator squeezed into a column.
 
 | | opencode (official) | OpenCode Sidekick |
 | --- | --- | --- |
 | Where it opens | Terminal in a new editor column | Webview in the secondary sidebar |
 | Editor layout | Split into two columns | Untouched |
-| Survives view switching | Yes | Yes (`retainContextWhenHidden`) |
+| Typing, pasting, code blocks | TUI inside a terminal | Native textarea and markdown |
+| Sessions | One terminal at a time | Built-in history, search and new sessions |
 | Same sessions, models, config | Yes | Yes |
-
-## What you get
-
-- The real OpenCode UI, not a reimplementation. Same sessions, same models, same agents, same tools as the CLI.
-- A dedicated icon in the secondary sidebar activity bar, next to your other chat panels:
 
 ![OpenCode icon sitting in the secondary sidebar activity bar beside Copilot](assets/activitybar.png)
 
-- Automatic connection: if no OpenCode server is running, the extension starts it for you.
-- Live streaming over the OpenCode event stream, so the panel updates as the agent works.
-- Escape hatches: reload the panel, open the same UI in your browser, or drop back to the integrated terminal.
+## What you get
+
+- **The real OpenCode agent.** The panel talks to the OpenCode server over its HTTP API and event stream, so sessions, models, agents, tools and permissions are the same ones your CLI uses.
+- **A UI built for a narrow column.** User bubbles, streamed markdown, syntax-highlighted code blocks with a copy button, collapsible reasoning, and compact tool cards with live status.
+- **Working text input.** Paste with `Cmd+V` / `Ctrl+V`, multi-line prompts with `Shift+Enter`, `Enter` to send.
+- **Session history.** Grouped by Today / Yesterday / Previous 7 days / Older, with search, one-click switching and delete.
+- **New sessions in one click.** The `+` button in the header, or `Cmd+Alt+N`.
+- **Model and agent pickers.** Every model and agent the server reports, switchable per session.
+- **Stop button.** Interrupt a running turn without hunting for a key chord.
+
+## Screens
+
+![Session history](assets/panel-history.png)
+
+![New session](assets/panel-empty.png)
 
 ## Install
 
@@ -44,16 +52,18 @@ Or in VS Code: Extensions view → `...` → **Install from VSIX**.
 2. Click the OpenCode icon.
 3. Talk to your agent.
 
-You can also run **OpenCode: Focus OpenCode Sidekick** from the Command Palette, or press `Cmd+Alt+O` (`Ctrl+Alt+O`).
+The panel opens on your most recent session for the current workspace. Use `+` for a new one, or the title to browse history.
 
 ## Commands
 
-| Command | Description |
+| Command | Shortcut |
 | --- | --- |
-| `OpenCode: Focus OpenCode Sidekick` | Reveal and focus the sidebar panel |
-| `OpenCode: Reload OpenCode Sidekick` | Reconnect and reload the panel |
-| `OpenCode: Open OpenCode UI in Browser` | Open the authenticated UI in your default browser |
-| `OpenCode: Open OpenCode in Integrated Terminal` | Fall back to the classic TUI in the bottom panel |
+| `OpenCode: Focus OpenCode Sidekick` | `Cmd+Alt+Shift+O` |
+| `OpenCode: New Session` | `Cmd+Alt+N` |
+| `OpenCode: Show Session History` | |
+| `OpenCode: Reload OpenCode Sidekick` | |
+| `OpenCode: Open OpenCode UI in Browser` | |
+| `OpenCode: Open OpenCode in Integrated Terminal` | |
 
 ## Settings
 
@@ -64,23 +74,15 @@ You can also run **OpenCode: Focus OpenCode Sidekick** from the Command Palette,
 
 ## How it works
 
-The panel is a webview that hosts the OpenCode web UI. The extension reads the running server's endpoint from `~/.local/state/opencode/service.json`, starts a small loopback proxy that attaches the server's credentials, and points the webview at that proxy. The UI runs in its own origin inside the sidebar, and streaming keeps working because the proxy forwards the event stream unchanged.
+The extension reads the running server's endpoint and credentials from `~/.local/state/opencode/service.json`, then talks to it directly: `GET /api/session` for history, `POST /api/session/{id}/prompt` to send, `GET /api/session/{id}/message` for transcripts, and `GET /api/event` for the live stream. Deltas arrive over SSE and are applied to the transcript as they stream; structural events trigger a re-read so tool cards stay accurate.
 
-```mermaid
-flowchart LR
-  subgraph before [opencode: editor gets split]
-    A[Editor] --- B[Terminal<br/>ViewColumn.Beside]
-  end
-  subgraph after [OpenCode Sidekick: editor stays whole]
-    C[Editor] --- D[Secondary sidebar<br/>OpenCode UI]
-  end
-```
+Everything stays on your machine. No proxy process, no iframe, no extra port.
 
 ## Notes
 
-- Credentials never leave your machine. The proxy listens on `127.0.0.1` only and exists for the lifetime of the extension host.
 - If the OpenCode server restarts with new credentials, run **Reload OpenCode Sidekick**.
-- The UI itself is OpenCode's own web interface, so its language follows your system locale.
+- The panel follows your VS Code theme for surfaces and text, with a mint accent that matches the icon.
+- Code that the agent writes is still handled by OpenCode itself, so its own permission prompts apply.
 
 ## License
 

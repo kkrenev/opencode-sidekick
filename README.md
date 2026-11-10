@@ -20,7 +20,10 @@ OpenCode Sidekick declares its own container in `secondarySidebar`, so the OpenC
 ## What you get
 
 - The real OpenCode UI, not a reimplementation. Same sessions, same models, same agents, same tools as the CLI.
-- A dedicated icon in the secondary sidebar activity bar, next to your other chat panels.
+- A dedicated icon in the secondary sidebar activity bar, next to your other chat panels:
+
+![OpenCode icon sitting in the secondary sidebar activity bar beside Copilot](assets/activitybar.png)
+
 - Automatic connection: if no OpenCode server is running, the extension starts it for you.
 - Live streaming over the OpenCode event stream, so the panel updates as the agent works.
 - Escape hatches: reload the panel, open the same UI in your browser, or drop back to the integrated terminal.

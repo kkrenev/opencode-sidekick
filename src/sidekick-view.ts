@@ -7,6 +7,8 @@ export const VIEW_ID = 'opencode.sidekick';
 export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   private view: vscode.WebviewView | undefined;
   private proxy: LocalProxy | undefined;
+  private proxyTarget: string | undefined;
+  private proxyCredential: string | undefined;
   private endpoint: OpenCodeEndpoint | undefined;
 
   async resolveWebviewView(view: vscode.WebviewView): Promise<void> {
@@ -30,12 +32,30 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
 
     try {
       const endpoint = await connect();
-      this.endpoint = endpoint;
-      if (!this.proxy) {
-        this.proxy = await startLocalProxy(new URL(endpoint.url), endpoint.credential);
+      if (this.view !== view) {
+        return;
       }
-      view.webview.html = this.appHtml(this.proxy.origin, endpoint.credential);
+      this.endpoint = endpoint;
+      let proxy = this.proxy;
+      if (
+        !proxy ||
+        this.proxyTarget !== endpoint.url ||
+        this.proxyCredential !== endpoint.credential
+      ) {
+        proxy?.dispose();
+        proxy = await startLocalProxy(new URL(endpoint.url), endpoint.credential);
+        this.proxy = proxy;
+        this.proxyTarget = endpoint.url;
+        this.proxyCredential = endpoint.credential;
+      }
+      if (this.view !== view) {
+        return;
+      }
+      view.webview.html = this.appHtml(proxy.origin, endpoint.credential);
     } catch (error) {
+      if (this.view !== view) {
+        return;
+      }
       this.endpoint = undefined;
       const message = error instanceof Error ? error.message : String(error);
       view.webview.html = this.failureHtml(message);
@@ -52,6 +72,8 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
   dispose(): void {
     this.proxy?.dispose();
     this.proxy = undefined;
+    this.proxyTarget = undefined;
+    this.proxyCredential = undefined;
     this.endpoint = undefined;
   }
 

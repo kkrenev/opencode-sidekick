@@ -8,19 +8,78 @@ export interface SessionSummary {
   readonly directory?: string;
   readonly running: boolean;
   readonly agent?: string;
-  readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string };
+  readonly model?: ModelSelection;
+}
+
+export interface ModelVariant {
+  readonly id: string;
+  readonly effort?: string;
 }
 
 export interface ModelEntry {
   readonly id: string;
   readonly providerID: string;
   readonly name: string;
-  readonly variants: readonly string[];
+  readonly variants: readonly ModelVariant[];
 }
 
 export interface AgentEntry {
   readonly id: string;
   readonly name: string;
+  readonly mode?: string;
+  readonly hidden?: boolean;
+  readonly description?: string;
+  readonly model?: ModelSelection;
+}
+
+export interface CommandEntry {
+  readonly name: string;
+  readonly description?: string;
+}
+
+export interface SkillEntry {
+  readonly id: string;
+  readonly name: string;
+  readonly description?: string;
+}
+
+export interface FileEntry {
+  readonly path: string;
+  readonly type: 'file' | 'directory';
+}
+
+export interface MentionRange {
+  readonly start: number;
+  readonly end: number;
+  readonly text: string;
+}
+
+export interface SkillAttachment {
+  readonly id: string;
+  readonly mention?: MentionRange;
+}
+
+export interface AgentAttachment {
+  readonly name: string;
+  readonly mention?: MentionRange;
+}
+
+export interface FileAttachment {
+  readonly uri: string;
+  readonly name?: string;
+  readonly mention?: MentionRange;
+}
+
+export interface PromptAttachments {
+  readonly skills?: readonly SkillAttachment[];
+  readonly agents?: readonly AgentAttachment[];
+  readonly files?: readonly FileAttachment[];
+}
+
+export interface ModelSelection {
+  readonly id: string;
+  readonly providerID: string;
+  readonly variant?: string;
 }
 
 export interface RawPart {
@@ -59,6 +118,16 @@ export interface RawSessionInfo {
   readonly model?: { readonly id?: string; readonly providerID?: string; readonly variant?: string };
   readonly time?: { readonly created?: number; readonly updated?: number; readonly busy?: number; readonly idle?: number };
   readonly location?: { readonly directory?: string };
+}
+
+interface RawModelInfo {
+  readonly id: string;
+  readonly providerID: string;
+  readonly name: string;
+  readonly variants?: readonly {
+    readonly id: string;
+    readonly settings?: Record<string, unknown>;
+  }[];
 }
 
 export interface StreamEvent {
@@ -102,10 +171,29 @@ export class OpenCodeClient {
     return body.data;
   }
 
-  async prompt(sessionID: string, text: string): Promise<void> {
+  async getSession(sessionID: string): Promise<SessionSummary> {
+    const body = await this.request<Envelope<RawSessionInfo>>(
+      `/api/session/${encodeURIComponent(sessionID)}`,
+    );
+    return toSummary(body.data);
+  }
+
+  async prompt(sessionID: string, text: string, attachments?: PromptAttachments): Promise<void> {
     await this.request(`/api/session/${encodeURIComponent(sessionID)}/prompt`, {
       method: 'POST',
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, ...attachments }),
+    });
+  }
+
+  async command(
+    sessionID: string,
+    name: string,
+    text: string,
+    attachments?: PromptAttachments,
+  ): Promise<void> {
+    await this.request(`/api/session/${encodeURIComponent(sessionID)}/command`, {
+      method: 'POST',
+      body: JSON.stringify({ name, text, ...attachments }),
     });
   }
 
@@ -114,26 +202,86 @@ export class OpenCodeClient {
   }
 
   async listModels(directory: string): Promise<ModelEntry[]> {
-    const query = new URLSearchParams({ directory });
-    const body = await this.request<Envelope<ModelEntry[]>>(`/api/model?${query.toString()}`);
+    const body = await this.request<Envelope<RawModelInfo[]>>(`/api/model?${locationQuery(directory)}`);
     return body.data.map((model) => ({
       id: model.id,
       providerID: model.providerID,
       name: model.name,
-      variants: Array.isArray(model.variants) ? model.variants : [],
+      variants: Array.isArray(model.variants)
+        ? model.variants.map((variant) => ({
+            id: variant.id,
+            effort:
+              typeof variant.settings?.effort === 'string' ? variant.settings.effort : undefined,
+          }))
+        : [],
     }));
   }
 
-  async listAgents(directory: string): Promise<AgentEntry[]> {
-    const query = new URLSearchParams({ directory });
-    const body = await this.request<Envelope<AgentEntry[]>>(`/api/agent?${query.toString()}`);
-    return body.data.map((agent) => ({ id: agent.id, name: agent.name }));
+  async getDefaultModel(directory: string): Promise<ModelSelection | undefined> {
+    const body = await this.request<Envelope<RawModelInfo | null>>(
+      `/api/model/default?${locationQuery(directory)}`,
+    );
+    if (!body.data) {
+      return undefined;
+    }
+    return { id: body.data.id, providerID: body.data.providerID };
   }
 
-  async selectModel(
-    sessionID: string,
-    model: { id: string; providerID: string; variant?: string },
-  ): Promise<void> {
+  async listAgents(directory: string): Promise<AgentEntry[]> {
+    const body = await this.request<Envelope<AgentEntry[]>>(`/api/agent?${locationQuery(directory)}`);
+    return body.data.map((agent) => ({
+      id: agent.id,
+      name: agent.name,
+      mode: typeof agent.mode === 'string' ? agent.mode : undefined,
+      hidden: agent.hidden === true,
+      description: typeof agent.description === 'string' ? agent.description : undefined,
+      model:
+        agent.model &&
+        typeof agent.model.id === 'string' &&
+        typeof agent.model.providerID === 'string'
+          ? {
+              id: agent.model.id,
+              providerID: agent.model.providerID,
+              variant:
+                typeof agent.model.variant === 'string' ? agent.model.variant : undefined,
+            }
+          : undefined,
+    }));
+  }
+
+  async listCommands(directory: string): Promise<CommandEntry[]> {
+    const body = await this.request<Envelope<CommandEntry[]>>(
+      `/api/command?${locationQuery(directory)}`,
+    );
+    return body.data.map((command) => ({
+      name: command.name,
+      description: typeof command.description === 'string' ? command.description : undefined,
+    }));
+  }
+
+  async listSkills(directory: string): Promise<SkillEntry[]> {
+    const body = await this.request<Envelope<SkillEntry[]>>(`/api/skill?${locationQuery(directory)}`);
+    return body.data.map((skill) => ({
+      id: skill.id,
+      name: skill.name,
+      description: typeof skill.description === 'string' ? skill.description : undefined,
+    }));
+  }
+
+  async findFiles(directory: string, query: string, limit = 30): Promise<FileEntry[]> {
+    const params = new URLSearchParams();
+    params.set('location[directory]', directory);
+    params.set('query', query);
+    params.set('type', 'file');
+    params.set('limit', String(limit));
+    const body = await this.request<Envelope<FileEntry[]>>(`/api/fs/find?${params.toString()}`);
+    return body.data.map((entry) => ({
+      path: entry.path,
+      type: entry.type === 'directory' ? 'directory' : 'file',
+    }));
+  }
+
+  async selectModel(sessionID: string, model: ModelSelection): Promise<void> {
     await this.request(`/api/session/${encodeURIComponent(sessionID)}/model`, {
       method: 'POST',
       body: JSON.stringify({ model }),
@@ -201,6 +349,12 @@ export class OpenCodeClient {
     const text = await response.text();
     return (text.length > 0 ? JSON.parse(text) : undefined) as T;
   }
+}
+
+function locationQuery(directory: string): string {
+  const query = new URLSearchParams();
+  query.set('location[directory]', directory);
+  return query.toString();
 }
 
 function toSummary(info: RawSessionInfo): SessionSummary {

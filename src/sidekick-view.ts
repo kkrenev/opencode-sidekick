@@ -4,13 +4,27 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { mapMessages, UiMessage } from './message-map';
 import {
+  AgentAttachment,
   AgentEntry,
+  CommandEntry,
+  FileAttachment,
   ModelEntry,
+  ModelSelection,
   OpenCodeClient,
+  PromptAttachments,
   SessionSummary,
+  SkillAttachment,
+  SkillEntry,
   StreamEvent,
 } from './opencode-client';
 import { connect, OpenCodeEndpoint } from './opencode-endpoint';
+import {
+  isSettingKey,
+  readSettings,
+  resetUiSettings,
+  SidekickSettings,
+  writeSetting,
+} from './settings';
 
 export const VIEW_ID = 'opencode.sidekick';
 
@@ -22,10 +36,10 @@ interface StoredSelection {
   readonly sessionID: string;
 }
 
-interface Selection {
-  readonly id: string;
-  readonly providerID: string;
-  readonly variant?: string;
+interface DefaultSelection {
+  readonly model?: ModelSelection;
+  readonly effort?: string;
+  readonly mode?: string;
 }
 
 export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
@@ -34,15 +48,31 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
   private endpoint: OpenCodeEndpoint | undefined;
   private stopStream: (() => void) | undefined;
   private refreshTimer: NodeJS.Timeout | undefined;
+  private sessionRefreshTimer: NodeJS.Timeout | undefined;
   private session: SessionSummary | undefined;
   private sessions: SessionSummary[] = [];
   private messages: UiMessage[] = [];
   private models: ModelEntry[] = [];
   private agents: AgentEntry[] = [];
+  private commands: CommandEntry[] = [];
+  private skills: SkillEntry[] = [];
+  private defaultModel: ModelSelection | undefined;
+  private settings: SidekickSettings = readSettings();
+  private configSubscription: vscode.Disposable | undefined;
+  private pendingSettings = false;
+  private webviewReady = false;
   private busy = false;
   private lastError: string | undefined;
 
-  constructor(private readonly context: vscode.ExtensionContext) {}
+  constructor(private readonly context: vscode.ExtensionContext) {
+    this.configSubscription = vscode.workspace.onDidChangeConfiguration((event) => {
+      if (!event.affectsConfiguration('opencodeSidekick')) {
+        return;
+      }
+      this.settings = readSettings();
+      this.post({ type: 'state', state: this.snapshot() });
+    });
+  }
 
   get directory(): string {
     return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? os.homedir();
@@ -61,6 +91,7 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
     }
     view.onDidDispose(() => {
       this.view = undefined;
+      this.webviewReady = false;
     });
     view.webview.onDidReceiveMessage((message) => {
       void this.handle(message as { type: string; [key: string]: unknown });
@@ -84,6 +115,7 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
       this.session = session;
       this.messages = [];
       this.busy = false;
+      await this.applyNewSessionDefaults(session);
       await this.persistSession(session.id);
       await this.loadSessions();
       this.post({ type: 'state', state: this.snapshot() });
@@ -99,6 +131,14 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
     this.post({ type: 'openHistory' });
   }
 
+  openSettings(): void {
+    if (!this.view || !this.webviewReady) {
+      this.pendingSettings = true;
+      return;
+    }
+    this.post({ type: 'openSettings' });
+  }
+
   async reload(): Promise<void> {
     await this.connectAndLoad();
   }
@@ -106,12 +146,19 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
   dispose(): void {
     this.stopStream?.();
     this.stopStream = undefined;
+    this.configSubscription?.dispose();
+    this.configSubscription = undefined;
     if (this.refreshTimer) {
       clearTimeout(this.refreshTimer);
       this.refreshTimer = undefined;
     }
+    if (this.sessionRefreshTimer) {
+      clearTimeout(this.sessionRefreshTimer);
+      this.sessionRefreshTimer = undefined;
+    }
     this.client = undefined;
     this.endpoint = undefined;
+    this.webviewReady = false;
   }
 
   private async connectAndLoad(): Promise<void> {
@@ -122,7 +169,13 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
       this.stopStream?.();
       this.stopStream = this.client.subscribe((event) => this.onEvent(event));
 
-      await Promise.all([this.loadModels(), this.loadAgents()]);
+      await Promise.all([
+        this.loadModels(),
+        this.loadAgents(),
+        this.loadCommands(),
+        this.loadSkills(),
+        this.loadDefaultModel(),
+      ]);
       await this.loadSessions();
 
       const stored = this.context.workspaceState.get<StoredSelection>(SESSION_KEY);
@@ -164,6 +217,39 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
     }
   }
 
+  private async loadCommands(): Promise<void> {
+    if (!this.client) {
+      return;
+    }
+    try {
+      this.commands = await this.client.listCommands(this.directory);
+    } catch {
+      this.commands = [];
+    }
+  }
+
+  private async loadSkills(): Promise<void> {
+    if (!this.client) {
+      return;
+    }
+    try {
+      this.skills = await this.client.listSkills(this.directory);
+    } catch {
+      this.skills = [];
+    }
+  }
+
+  private async loadDefaultModel(): Promise<void> {
+    if (!this.client) {
+      return;
+    }
+    try {
+      this.defaultModel = await this.client.getDefaultModel(this.directory);
+    } catch {
+      this.defaultModel = undefined;
+    }
+  }
+
   private async loadSessions(search?: string): Promise<void> {
     if (!this.client) {
       return;
@@ -186,6 +272,228 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
     } catch (error) {
       this.fail(error);
     }
+  }
+
+  private async refreshSession(): Promise<void> {
+    if (!this.client || !this.session) {
+      return;
+    }
+    try {
+      this.session = await this.client.getSession(this.session.id);
+    } catch {
+      // The next event or manual reload will reconcile the session.
+    }
+  }
+
+  private scheduleSessionRefresh(delay = 350): void {
+    if (this.sessionRefreshTimer) {
+      clearTimeout(this.sessionRefreshTimer);
+    }
+    this.sessionRefreshTimer = setTimeout(() => {
+      this.sessionRefreshTimer = undefined;
+      void this.refreshSession().then(() => {
+        this.post({ type: 'state', state: this.snapshot() });
+      });
+    }, delay);
+  }
+
+  private async ensureSession(): Promise<SessionSummary | undefined> {
+    if (this.session) {
+      return this.session;
+    }
+    await this.newSession();
+    return this.session;
+  }
+
+  private computeDefaults(): DefaultSelection {
+    const configured = parseModelSetting(this.settings.defaultModel);
+    const configuredEntry = configured
+      ? this.models.find(
+          (entry) => entry.id === configured.id && entry.providerID === configured.providerID,
+        )
+      : undefined;
+    const model = configuredEntry ? configured : this.defaultModel;
+    const primary = this.agents.filter((agent) => !agent.hidden && agent.mode === 'primary');
+    const mode =
+      this.settings.defaultMode ||
+      primary.find((agent) => agent.id === 'build')?.id ||
+      primary[0]?.id;
+    let effort = this.settings.defaultEffort || undefined;
+    if (!effort && model && mode) {
+      const agent = this.agents.find((entry) => entry.id === mode);
+      if (
+        agent?.model &&
+        agent.model.id === model.id &&
+        agent.model.providerID === model.providerID
+      ) {
+        effort = agent.model.variant;
+      }
+    }
+    return { model, mode, effort };
+  }
+
+  private async applyNewSessionDefaults(session: SessionSummary): Promise<void> {
+    if (!this.client) {
+      return;
+    }
+    const explicitModel = this.settings.defaultModel.trim().length > 0;
+    const explicitEffort = this.settings.defaultEffort.trim().length > 0;
+    const explicitMode = this.settings.defaultMode.trim().length > 0;
+    if (!explicitModel && !explicitEffort && !explicitMode) {
+      return;
+    }
+    const defaults = this.computeDefaults();
+    try {
+      let next = session;
+      if ((explicitModel || explicitEffort) && defaults.model) {
+        const model = {
+          id: defaults.model.id,
+          providerID: defaults.model.providerID,
+          variant: explicitEffort ? this.settings.defaultEffort : undefined,
+        };
+        await this.client.selectModel(session.id, model);
+        next = { ...next, model };
+      }
+      if (explicitMode && defaults.mode) {
+        await this.client.selectAgent(session.id, defaults.mode);
+        next = { ...next, agent: defaults.mode };
+      }
+      if (this.session?.id === session.id) {
+        this.session = next;
+      }
+    } catch (error) {
+      this.fail(error);
+    }
+  }
+
+  private async applySetting(key: string, value: unknown): Promise<void> {
+    if (!isSettingKey(key)) {
+      return;
+    }
+    try {
+      await writeSetting(key, value);
+      this.settings = readSettings();
+      this.post({ type: 'state', state: this.snapshot() });
+    } catch (error) {
+      this.fail(error);
+    }
+  }
+
+  private async applyModel(selection: ModelSelection): Promise<void> {
+    if (!this.client) {
+      return;
+    }
+    const session = await this.ensureSession();
+    if (!session) {
+      return;
+    }
+    try {
+      await this.client.selectModel(session.id, selection);
+      if (this.session?.id === session.id) {
+        this.session = { ...this.session, model: selection };
+      }
+      this.post({ type: 'state', state: this.snapshot() });
+      this.scheduleSessionRefresh();
+    } catch (error) {
+      this.fail(error);
+    }
+  }
+
+  private async applyAgent(agent: string): Promise<void> {
+    if (!this.client || agent.length === 0) {
+      return;
+    }
+    const session = await this.ensureSession();
+    if (!session) {
+      return;
+    }
+    try {
+      await this.client.selectAgent(session.id, agent);
+      if (this.session?.id === session.id) {
+        this.session = { ...this.session, agent };
+      }
+      this.post({ type: 'state', state: this.snapshot() });
+      this.scheduleSessionRefresh();
+    } catch (error) {
+      this.fail(error);
+    }
+  }
+
+  private matchCommand(text: string): { name: string; args: string } | undefined {
+    const match = /^\/([^\s]+)(?:\s+([\s\S]*))?$/.exec(text);
+    if (!match) {
+      return undefined;
+    }
+    const name = match[1];
+    if (!this.commands.some((command) => command.name === name)) {
+      return undefined;
+    }
+    return { name, args: match[2] ?? '' };
+  }
+
+  private async parseAttachments(text: string): Promise<PromptAttachments> {
+    const skills: SkillAttachment[] = [];
+    const agents: AgentAttachment[] = [];
+    const files: FileAttachment[] = [];
+    const seenSkills = new Set<string>();
+    const seenAgents = new Set<string>();
+    const seenFiles = new Set<string>();
+    const pattern = /(^|[\s(])@([A-Za-z0-9_.:/-]+)/g;
+    let match: RegExpExecArray | null;
+
+    while ((match = pattern.exec(text)) !== null) {
+      const token = match[2];
+      const start = match.index + match[1].length;
+      const end = start + token.length + 1;
+      const mention = { start, end, text: text.slice(start, end) };
+
+      const skill = this.skills.find((entry) => entry.id === token || entry.name === token);
+      if (skill) {
+        if (!seenSkills.has(skill.id)) {
+          seenSkills.add(skill.id);
+          skills.push({ id: skill.id, mention });
+        }
+        continue;
+      }
+
+      const agent = this.agents.find((entry) => entry.id === token || entry.name === token);
+      if (agent && !agent.hidden) {
+        if (!seenAgents.has(agent.id)) {
+          seenAgents.add(agent.id);
+          agents.push({ name: agent.id, mention });
+        }
+        continue;
+      }
+
+      const file = await this.resolveFile(token);
+      if (file && !seenFiles.has(file.uri)) {
+        seenFiles.add(file.uri);
+        files.push({ ...file, mention });
+      }
+    }
+
+    return { skills, agents, files };
+  }
+
+  private async resolveFile(token: string): Promise<{ uri: string; name: string } | undefined> {
+    const relative = token.replace(/^\.\//, '');
+    if (relative.length === 0) {
+      return undefined;
+    }
+    const root = path.resolve(this.directory);
+    const absolute = path.resolve(root, relative);
+    if (absolute !== root && !absolute.startsWith(`${root}${path.sep}`)) {
+      return undefined;
+    }
+    try {
+      const stat = await fs.stat(absolute);
+      if (!stat.isFile()) {
+        return undefined;
+      }
+    } catch {
+      return undefined;
+    }
+    return { uri: vscode.Uri.file(absolute).toString(), name: relative };
   }
 
   private onEvent(event: StreamEvent): void {
@@ -254,7 +562,28 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
       return;
     }
 
-    if (event.type.startsWith('session.tool.') || event.type.startsWith('session.step.') || event.type === 'session.text.started' || event.type === 'session.text.ended' || event.type === 'session.reasoning.started' || event.type === 'session.reasoning.ended' || event.type === 'session.inbox.delivered') {
+    if (event.type === 'session.model.selected' || event.type === 'session.agent.selected') {
+      void this.refreshSession().then(() => {
+        this.post({ type: 'state', state: this.snapshot() });
+      });
+      return;
+    }
+
+    if (event.type === 'command.updated') {
+      void this.loadCommands().then(() => {
+        this.post({ type: 'state', state: this.snapshot() });
+      });
+      return;
+    }
+
+    if (event.type === 'skill.updated') {
+      void this.loadSkills().then(() => {
+        this.post({ type: 'state', state: this.snapshot() });
+      });
+      return;
+    }
+
+    if (event.type.startsWith('session.tool.') || event.type.startsWith('session.step.') || event.type === 'session.text.started' || event.type === 'session.text.ended' || event.type === 'session.reasoning.started' || event.type === 'session.reasoning.ended' || event.type === 'session.inbox.delivered' || event.type === 'session.skill.activated') {
       this.scheduleRefresh();
     }
   }
@@ -275,7 +604,12 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
   private async handle(message: { type: string; [key: string]: unknown }): Promise<void> {
     switch (message.type) {
       case 'ready':
+        this.webviewReady = true;
         await this.connectAndLoad();
+        if (this.pendingSettings) {
+          this.pendingSettings = false;
+          this.post({ type: 'openSettings' });
+        }
         return;
       case 'newSession':
         await this.newSession();
@@ -308,13 +642,38 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
         this.busy = true;
         this.post({ type: 'busy', busy: true });
         try {
-          await this.client.prompt(this.session.id, text);
+          const command = this.matchCommand(text);
+          if (command) {
+            const attachments = await this.parseAttachments(command.args);
+            await this.client.command(this.session.id, command.name, command.args, attachments);
+          } else {
+            const attachments = await this.parseAttachments(text);
+            await this.client.prompt(this.session.id, text, attachments);
+          }
+          await this.refreshSession();
           await this.loadMessages();
+          this.post({ type: 'state', state: this.snapshot() });
           this.post({ type: 'messages', messages: this.messages });
+          this.scheduleRefresh();
         } catch (error) {
           this.busy = false;
           this.post({ type: 'busy', busy: false });
           this.fail(error);
+        }
+        return;
+      }
+      case 'findFiles': {
+        const query = typeof message.query === 'string' ? message.query : '';
+        const requestId = typeof message.requestId === 'string' ? message.requestId : '';
+        if (!this.client) {
+          this.post({ type: 'files', requestId, query, items: [] });
+          return;
+        }
+        try {
+          const items = await this.client.findFiles(this.directory, query);
+          this.post({ type: 'files', requestId, query, items });
+        } catch {
+          this.post({ type: 'files', requestId, query, items: [] });
         }
         return;
       }
@@ -361,41 +720,38 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
         return;
       }
       case 'selectModel': {
-        if (!this.client || !this.session) {
-          return;
-        }
-        const selection = message.selection as Selection | undefined;
+        const selection = message.selection as ModelSelection | undefined;
         if (!selection) {
           return;
         }
+        await this.applyModel(selection);
+        return;
+      }
+      case 'selectAgent': {
+        const agent = typeof message.agent === 'string' ? message.agent : '';
+        await this.applyAgent(agent);
+        return;
+      }
+      case 'updateSetting': {
+        const key = typeof message.key === 'string' ? message.key : '';
+        await this.applySetting(key, message.value);
+        return;
+      }
+      case 'resetSettings': {
         try {
-          await this.client.selectModel(this.session.id, {
-            id: selection.id,
-            providerID: selection.providerID,
-            variant: selection.variant,
-          });
-          await this.loadMessages();
+          await resetUiSettings();
+          this.settings = readSettings();
           this.post({ type: 'state', state: this.snapshot() });
         } catch (error) {
           this.fail(error);
         }
         return;
       }
-      case 'selectAgent': {
-        if (!this.client || !this.session) {
-          return;
-        }
-        const agent = typeof message.agent === 'string' ? message.agent : '';
-        if (agent.length === 0) {
-          return;
-        }
-        try {
-          await this.client.selectAgent(this.session.id, agent);
-          await this.loadMessages();
-          this.post({ type: 'state', state: this.snapshot() });
-        } catch (error) {
-          this.fail(error);
-        }
+      case 'openVscodeSettings': {
+        await vscode.commands.executeCommand(
+          'workbench.action.openSettings',
+          '@ext:kkrenev.opencode-sidekick',
+        );
         return;
       }
       case 'copy': {
@@ -442,6 +798,11 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
       messages: this.messages,
       models: this.models,
       agents: this.agents,
+      commands: this.commands,
+      skills: this.skills,
+      defaultModel: this.defaultModel,
+      defaults: this.computeDefaults(),
+      settings: this.settings,
       busy: this.busy,
       model: this.session?.model,
       agent: this.session?.agent,
@@ -482,11 +843,26 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
     <style>${style}</style>
   </head>
   <body>
-    <div id="app"><div class="boot">Starting OpenCode&hellip;</div></div>
+    <div id="root"><div class="boot">Starting OpenCode&hellip;</div></div>
     <script nonce="${nonce}">${script}</script>
   </body>
 </html>`;
   }
+}
+
+function parseModelSetting(value: string): ModelSelection | undefined {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+  const slash = trimmed.indexOf('/');
+  if (slash <= 0 || slash === trimmed.length - 1) {
+    return undefined;
+  }
+  return {
+    providerID: trimmed.slice(0, slash),
+    id: trimmed.slice(slash + 1),
+  };
 }
 
 function randomNonce(): string {

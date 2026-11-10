@@ -1,7 +1,9 @@
 .vscode/**
 src/**
+scripts/**
 node_modules/**
 tsconfig.json
+tsconfig.webview.json
 .gitignore
 package-lock.json
 **/*.ts

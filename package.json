@@ -2,7 +2,7 @@
   "name": "opencode-sidekick",
   "displayName": "OpenCode Sidekick",
   "description": "The OpenCode agent docked in the VS Code secondary sidebar, next to your code instead of on top of it.",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "publisher": "kkrenev",
   "license": "MIT",
   "icon": "resources/icon.png",
@@ -78,6 +78,12 @@
         "icon": "$(history)"
       },
       {
+        "command": "opencode.sidekick.settings",
+        "title": "Open Sidekick Settings",
+        "category": "OpenCode",
+        "icon": "$(gear)"
+      },
+      {
         "command": "opencode.sidekick.reload",
         "title": "Reload OpenCode Sidekick",
         "category": "OpenCode",
@@ -112,6 +118,11 @@
           "command": "opencode.sidekick.openInBrowser",
           "when": "view == opencode.sidekick",
           "group": "navigation@3"
+        },
+        {
+          "command": "opencode.sidekick.settings",
+          "when": "view == opencode.sidekick",
+          "group": "navigation@4"
         }
       ],
       "commandPalette": [
@@ -123,6 +134,9 @@
         },
         {
           "command": "opencode.sidekick.history"
+        },
+        {
+          "command": "opencode.sidekick.settings"
         },
         {
           "command": "opencode.sidekick.reload"
@@ -150,6 +164,94 @@
     "configuration": {
       "title": "OpenCode Sidekick",
       "properties": {
+        "opencodeSidekick.defaultModel": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Default model for new sessions, in `provider/model` form. Empty uses the server default."
+        },
+        "opencodeSidekick.defaultEffort": {
+          "type": "string",
+          "default": "",
+          "description": "Default reasoning effort (model variant) for new sessions. Empty lets the model decide."
+        },
+        "opencodeSidekick.defaultMode": {
+          "type": "string",
+          "default": "",
+          "description": "Default agent mode for new sessions. Empty uses the server default (usually Build)."
+        },
+        "opencodeSidekick.sendKey": {
+          "type": "string",
+          "enum": [
+            "enter",
+            "mod-enter"
+          ],
+          "enumDescriptions": [
+            "Enter sends, Shift+Enter adds a new line.",
+            "Cmd/Ctrl+Enter sends, Enter adds a new line."
+          ],
+          "default": "enter",
+          "description": "Keyboard shortcut for sending a message."
+        },
+        "opencodeSidekick.autoScroll": {
+          "type": "boolean",
+          "default": true,
+          "description": "Keep the transcript scrolled to the newest output while the agent streams."
+        },
+        "opencodeSidekick.showTimestamps": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show the time next to assistant messages."
+        },
+        "opencodeSidekick.reasoning": {
+          "type": "string",
+          "enum": [
+            "collapsed",
+            "expanded",
+            "hidden"
+          ],
+          "enumDescriptions": [
+            "Show reasoning as a collapsed block.",
+            "Show reasoning expanded by default.",
+            "Hide reasoning blocks completely."
+          ],
+          "default": "collapsed",
+          "description": "How to display model reasoning."
+        },
+        "opencodeSidekick.compactTools": {
+          "type": "boolean",
+          "default": true,
+          "description": "Collapse tool input and output details by default."
+        },
+        "opencodeSidekick.accent": {
+          "type": "string",
+          "enum": [
+            "mint",
+            "blue",
+            "violet",
+            "amber"
+          ],
+          "default": "mint",
+          "description": "Accent color used by the panel."
+        },
+        "opencodeSidekick.density": {
+          "type": "string",
+          "enum": [
+            "comfortable",
+            "compact"
+          ],
+          "default": "comfortable",
+          "description": "Spacing density of the panel."
+        },
+        "opencodeSidekick.fontSize": {
+          "type": "string",
+          "enum": [
+            "small",
+            "default",
+            "large"
+          ],
+          "default": "default",
+          "description": "Base font size of the panel."
+        },
         "opencodeSidekick.cliPath": {
           "type": "string",
           "default": "",
@@ -164,15 +266,23 @@
     }
   },
   "scripts": {
-    "compile": "tsc -p .",
+    "build:webview": "esbuild src/webview/index.tsx --bundle --outfile=media/main.js --format=iife --target=es2022 --jsx=automatic --define:process.env.NODE_ENV='\"production\"' --minify --log-level=warning",
+    "watch:webview": "esbuild src/webview/index.tsx --bundle --outfile=media/main.js --format=iife --target=es2022 --jsx=automatic --define:process.env.NODE_ENV='\"production\"' --watch --log-level=warning",
+    "check:architecture": "node scripts/check-architecture.mjs",
+    "compile": "npm run check:architecture && tsc -p . && tsc -p tsconfig.webview.json && npm run build:webview",
     "watch": "tsc -p . --watch",
     "vscode:prepublish": "npm run compile",
     "package": "vsce package"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "@types/vscode": "^1.101.0",
     "@vscode/vsce": "^3.2.1",
+    "esbuild": "^0.28.2",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "typescript": "^5.7.2"
   }
 }

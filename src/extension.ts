@@ -23,6 +23,10 @@ export function activate(context: vscode.ExtensionContext): void {
       await vscode.commands.executeCommand(`workbench.view.extension.${CONTAINER_ID}`);
       await provider.showHistory();
     }),
+    vscode.commands.registerCommand('opencode.sidekick.settings', async () => {
+      await vscode.commands.executeCommand(`workbench.view.extension.${CONTAINER_ID}`);
+      provider.openSettings();
+    }),
     vscode.commands.registerCommand('opencode.sidekick.reload', async () => {
       await provider.reload();
     }),

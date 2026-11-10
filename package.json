@@ -1,0 +1,145 @@
+{
+  "name": "opencode-sidekick",
+  "displayName": "OpenCode Sidekick",
+  "description": "The OpenCode agent docked in the VS Code secondary sidebar, next to your code instead of on top of it.",
+  "version": "1.0.0",
+  "publisher": "kkrenev",
+  "license": "MIT",
+  "icon": "resources/icon.png",
+  "engines": {
+    "vscode": "^1.101.0"
+  },
+  "categories": [
+    "AI",
+    "Chat",
+    "Other"
+  ],
+  "keywords": [
+    "opencode",
+    "ai",
+    "agent",
+    "coding agent",
+    "sidebar",
+    "chat",
+    "assistant"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kkrenev/opencode-sidekick"
+  },
+  "bugs": {
+    "url": "https://github.com/kkrenev/opencode-sidekick/issues"
+  },
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onView:opencode.sidekick"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "secondarySidebar": [
+        {
+          "id": "opencodeSidekickContainer",
+          "title": "OpenCode",
+          "icon": "resources/opencode.svg"
+        }
+      ]
+    },
+    "views": {
+      "opencodeSidekickContainer": [
+        {
+          "id": "opencode.sidekick",
+          "type": "webview",
+          "name": "OpenCode",
+          "icon": "resources/opencode.svg"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "opencode.sidekick.focus",
+        "title": "Focus OpenCode Sidekick",
+        "category": "OpenCode"
+      },
+      {
+        "command": "opencode.sidekick.reload",
+        "title": "Reload OpenCode Sidekick",
+        "category": "OpenCode",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "opencode.sidekick.openInBrowser",
+        "title": "Open OpenCode UI in Browser",
+        "category": "OpenCode",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "opencode.sidekick.openTerminal",
+        "title": "Open OpenCode in Integrated Terminal",
+        "category": "OpenCode",
+        "icon": "$(terminal)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "opencode.sidekick.reload",
+          "when": "view == opencode.sidekick",
+          "group": "navigation@1"
+        },
+        {
+          "command": "opencode.sidekick.openInBrowser",
+          "when": "view == opencode.sidekick",
+          "group": "navigation@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "opencode.sidekick.focus"
+        },
+        {
+          "command": "opencode.sidekick.reload"
+        },
+        {
+          "command": "opencode.sidekick.openInBrowser"
+        },
+        {
+          "command": "opencode.sidekick.openTerminal"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "opencode.sidekick.focus",
+        "key": "ctrl+alt+o",
+        "mac": "cmd+alt+o"
+      }
+    ],
+    "configuration": {
+      "title": "OpenCode Sidekick",
+      "properties": {
+        "opencodeSidekick.cliPath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to the opencode executable. Leave empty to use the first `opencode` found on PATH."
+        },
+        "opencodeSidekick.autoStartServer": {
+          "type": "boolean",
+          "default": true,
+          "description": "Start the OpenCode background server automatically when the sidebar opens and no server is running."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "watch": "tsc -p . --watch",
+    "vscode:prepublish": "npm run compile",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/vscode": "^1.101.0",
+    "@vscode/vsce": "^3.2.1",
+    "typescript": "^5.7.2"
+  }
+}

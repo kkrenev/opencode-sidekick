@@ -1,4 +1,6 @@
+import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { mapMessages, UiMessage } from './message-map';
 import {
@@ -50,9 +52,13 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
     this.view = view;
     view.webview.options = {
       enableScripts: true,
-      localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'media')],
     };
-    view.webview.html = this.html(view.webview);
+    try {
+      view.webview.html = await this.html();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      view.webview.html = `<html><body><pre>OpenCode Sidekick failed to load: ${message.replace(/</g, '&lt;')}</pre></body></html>`;
+    }
     view.onDidDispose(() => {
       this.view = undefined;
     });
@@ -451,15 +457,18 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
     this.post({ type: 'error', message });
   }
 
-  private html(webview: vscode.Webview): string {
+  private async html(): Promise<string> {
     const nonce = randomNonce();
-    const style = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'main.css'));
-    const script = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'main.js'));
+    const media = vscode.Uri.joinPath(this.context.extensionUri, 'media');
+    const [style, script] = await Promise.all([
+      fs.readFile(path.join(media.fsPath, 'main.css'), 'utf8'),
+      fs.readFile(path.join(media.fsPath, 'main.js'), 'utf8'),
+    ]);
     const policy = [
       "default-src 'none'",
-      `style-src ${webview.cspSource}`,
-      `img-src ${webview.cspSource} data:`,
-      `font-src ${webview.cspSource}`,
+      "style-src 'unsafe-inline'",
+      "img-src data:",
+      "font-src data:",
       `script-src 'nonce-${nonce}'`,
     ].join('; ');
 
@@ -470,11 +479,11 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
     <meta http-equiv="Content-Security-Policy" content="${policy}" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>OpenCode</title>
-    <link rel="stylesheet" href="${style}" />
+    <style>${style}</style>
   </head>
   <body>
-    <div id="app"></div>
-    <script nonce="${nonce}" src="${script}"></script>
+    <div id="app"><div class="boot">Starting OpenCode&hellip;</div></div>
+    <script nonce="${nonce}">${script}</script>
   </body>
 </html>`;
   }

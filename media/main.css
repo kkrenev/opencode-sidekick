@@ -45,6 +45,15 @@ body {
   min-width: 0;
 }
 
+.boot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--dim);
+  font-size: 12px;
+}
+
 button {
   font: inherit;
   color: inherit;

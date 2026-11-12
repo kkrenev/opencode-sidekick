@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { normalizeThresholds } from './shared/context-usage';
+import { strictNotificationMode } from './shared/notification';
 import {
   AccentColor,
   Density,
@@ -36,6 +37,8 @@ const SETTING_KEYS = new Set<keyof SidekickSettings>([
   'permissionsAutoApproveSafe',
   'queueDelivery',
   'autoAttachActiveFile',
+  'notifications',
+  'notifyOnlyWhenHidden',
 ]);
 
 export function isSettingKey(value: string): value is keyof SidekickSettings {
@@ -73,6 +76,14 @@ export function readSettings(): SidekickSettings {
       config.get<unknown>('autoAttachActiveFile'),
       SETTING_DEFAULTS.autoAttachActiveFile,
     ),
+    notifications: strictNotificationMode(
+      config.get<unknown>('notifications'),
+      SETTING_DEFAULTS.notifications,
+    ),
+    notifyOnlyWhenHidden: strictBoolean(
+      config.get<unknown>('notifyOnlyWhenHidden'),
+      SETTING_DEFAULTS.notifyOnlyWhenHidden,
+    ),
   };
 }
 
@@ -103,6 +114,8 @@ export async function resetUiSettings(): Promise<void> {
     'permissionsAutoApproveSafe',
     'queueDelivery',
     'autoAttachActiveFile',
+    'notifications',
+    'notifyOnlyWhenHidden',
   ];
   for (const key of keys) {
     await config.update(key, SETTING_DEFAULTS[key], updateTarget(config, key));

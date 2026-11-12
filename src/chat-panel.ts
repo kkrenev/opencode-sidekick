@@ -19,6 +19,12 @@ export interface ChatPanelTarget {
   readonly column: vscode.ViewColumn;
 }
 
+/** Where the tab is: on screen and whether the user is looking at it. */
+export interface ChatPanelViewState {
+  readonly visible: boolean;
+  readonly active: boolean;
+}
+
 export interface ChatPanelOptions {
   readonly extensionUri: vscode.Uri;
   readonly globalStorageUri: vscode.Uri;
@@ -36,6 +42,8 @@ export interface ChatPanelOptions {
   readonly onReady: () => void;
   /** The user closed the tab: the chat stays, the stored target goes. */
   readonly onDispose: () => void;
+  /** The tab appeared, moved behind another tab or took focus. */
+  readonly onViewState?: (state: ChatPanelViewState) => void;
 }
 
 /**
@@ -51,6 +59,7 @@ export class ChatEditorPanel implements vscode.Disposable {
   private pending: Record<string, unknown> | undefined;
   private chrome: ChatPanelChrome | undefined;
   private target: string | undefined;
+  private viewStateSubscription: vscode.Disposable | undefined;
 
   constructor(private readonly options: ChatPanelOptions) {}
 
@@ -66,6 +75,11 @@ export class ChatEditorPanel implements vscode.Disposable {
     return this.panel !== undefined;
   }
 
+  /** The tab is the one on screen and has focus. */
+  get active(): boolean {
+    return this.panel?.active === true;
+  }
+
   /** Session the tab follows; `undefined` before the first `show`/`restore`. */
   get sessionID(): string | undefined {
     return this.target;
@@ -79,6 +93,7 @@ export class ChatEditorPanel implements vscode.Disposable {
       // only what the reveal shows for a moment.
       existing.title = request.title;
       existing.reveal();
+      this.reportViewState();
       return;
     }
     const panel = this.options.createPanel(CHAT_PANEL_VIEW_TYPE, request.title, request.column, {
@@ -88,6 +103,7 @@ export class ChatEditorPanel implements vscode.Disposable {
     });
     await this.boot(panel);
     panel.reveal();
+    this.reportViewState();
   }
 
   /** Takes a panel the serializer restored; nothing is created or revealed. */
@@ -130,6 +146,14 @@ export class ChatEditorPanel implements vscode.Disposable {
     this.panel = panel;
     this.ready = false;
     this.pending = undefined;
+    this.viewStateSubscription?.dispose();
+    this.viewStateSubscription = panel.onDidChangeViewState(() => {
+      if (this.panel === panel) {
+        this.reportViewState();
+      }
+    });
+    // A restored tab is already on screen; nothing fires until it changes.
+    this.reportViewState();
     panel.webview.options = {
       enableScripts: true,
       localResourceRoots: [this.options.extensionUri, this.options.globalStorageUri],
@@ -178,7 +202,18 @@ export class ChatEditorPanel implements vscode.Disposable {
     panel.iconPath = chrome.icons[chrome.status];
   }
 
+  /** The provider decides from this whether the user already sees the chat. */
+  private reportViewState(): void {
+    const panel = this.panel;
+    if (!panel) {
+      return;
+    }
+    this.options.onViewState?.({ visible: panel.visible, active: panel.active });
+  }
+
   private reset(): void {
+    this.viewStateSubscription?.dispose();
+    this.viewStateSubscription = undefined;
     this.panel = undefined;
     this.ready = false;
     this.pending = undefined;

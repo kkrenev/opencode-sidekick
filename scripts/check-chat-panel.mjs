@@ -28,12 +28,15 @@ const icons = {
 function fakePanel() {
   const messageListeners = [];
   const disposeListeners = [];
+  const viewStateListeners = [];
   const posted = [];
   const panel = {
     title: '',
     iconPath: undefined,
     revealed: 0,
     disposeCalls: 0,
+    visible: true,
+    active: true,
     webview: {
       options: undefined,
       html: '',
@@ -51,8 +54,27 @@ function fakePanel() {
       disposeListeners.push(listener);
       return { dispose() {} };
     },
+    onDidChangeViewState(listener) {
+      viewStateListeners.push(listener);
+      return {
+        dispose() {
+          const index = viewStateListeners.indexOf(listener);
+          if (index >= 0) {
+            viewStateListeners.splice(index, 1);
+          }
+        },
+      };
+    },
     reveal() {
       panel.revealed += 1;
+    },
+    /** The user switched to another tab or came back to this one. */
+    setViewState({ visible: shown, active }) {
+      panel.visible = shown;
+      panel.active = active;
+      for (const listener of [...viewStateListeners]) {
+        listener({ visible: shown, active });
+      }
     },
     dispose() {
       panel.disposeCalls += 1;
@@ -76,6 +98,7 @@ function harness({ html = async () => '<html>chat</html>' } = {}) {
   const ready = [];
   const disposed = [];
   const messages = [];
+  const viewStates = [];
   const panel = new ChatEditorPanel({
     extensionUri: { path: '/ext' },
     globalStorageUri: { path: '/storage' },
@@ -98,8 +121,11 @@ function harness({ html = async () => '<html>chat</html>' } = {}) {
     onDispose() {
       disposed.push(true);
     },
+    onViewState(state) {
+      viewStates.push(state);
+    },
   });
-  return { panel, created, restored, ready, disposed, messages };
+  return { panel, created, restored, ready, disposed, messages, viewStates };
 }
 
 // show(): one panel for the whole extension, on the requested column.
@@ -249,6 +275,35 @@ await check('a failing document disposes the panel and rethrows', async () => {
   assert.equal(created[0].disposeCalls, 1);
   assert.equal(panel.visible, false);
   assert.equal(disposed.length, 1);
+});
+
+// View state: the provider needs "on screen" and "focused", not "created".
+await check('show reports the tab as visible and active', async () => {
+  const { panel, viewStates } = harness();
+  await panel.show({ sessionID: 'ses_1', title: 'One', column: 2 });
+  assert.deepEqual(viewStates.at(-1), { visible: true, active: true });
+  assert.equal(panel.active, true);
+});
+
+await check('a view state change of the panel is reported', async () => {
+  const { panel, created, viewStates } = harness();
+  await panel.show({ sessionID: 'ses_1', title: 'One', column: 2 });
+  created[0].setViewState({ visible: true, active: false });
+  assert.deepEqual(viewStates.at(-1), { visible: true, active: false });
+  assert.equal(panel.active, false);
+  created[0].setViewState({ visible: true, active: true });
+  assert.deepEqual(viewStates.at(-1), { visible: true, active: true });
+  assert.equal(panel.active, true);
+});
+
+await check('a disposed tab reports no more view state', async () => {
+  const { panel, created, viewStates } = harness();
+  await panel.show({ sessionID: 'ses_1', title: 'One', column: 2 });
+  const before = viewStates.length;
+  created[0].dispose();
+  assert.equal(panel.active, false);
+  created[0].setViewState({ visible: true, active: true });
+  assert.equal(viewStates.length, before);
 });
 
 if (failures > 0) {

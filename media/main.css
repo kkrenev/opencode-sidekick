@@ -2980,6 +2980,11 @@ select:focus-visible {
   background: var(--accent);
 }
 
+.switch:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* Saved "Always allow" rules: one line per rule, delete only. */
 .saved-permissions {
   display: flex;

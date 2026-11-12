@@ -393,6 +393,26 @@
           "type": "boolean",
           "default": false,
           "description": "Keep the active workspace file attached to the composer as an automatic chip. Remove the chip to dismiss it until you switch files."
+        },
+        "opencodeSidekick.notifications": {
+          "type": "string",
+          "enum": [
+            "all",
+            "errors",
+            "off"
+          ],
+          "enumDescriptions": [
+            "Notify when a turn finishes or a permission request waits for an answer.",
+            "Notify only when a turn fails.",
+            "Never show system notifications. The tab badge and the connection banner stay."
+          ],
+          "default": "all",
+          "description": "Which finished turns raise a system notification."
+        },
+        "opencodeSidekick.notifyOnlyWhenHidden": {
+          "type": "boolean",
+          "default": true,
+          "description": "Notify only when the chat that needs you is not on screen. Turn off to notify for every finished turn, even while you watch it."
         }
       }
     }
@@ -417,7 +437,8 @@
     "check:chat-surfaces": "node scripts/check-chat-surfaces.mjs",
     "check:chat-panel": "node scripts/check-chat-panel.mjs",
     "check:chat-search": "node scripts/check-chat-search.mjs",
-    "compile": "npm run check:architecture && tsc -p . && npm run check:folders && npm run check:usage && npm run check:turn-diff && npm run check:open-target && npm run check:tool-card && npm run check:message-map && npm run check:revert-api && npm run check:permissions && npm run check:inbox-api && npm run check:editor-context && npm run check:auto-context && npm run check:chat-surfaces && npm run check:chat-panel && npm run check:chat-search && tsc -p tsconfig.webview.json && npm run build:webview",
+    "check:notifications": "node scripts/check-notifications.mjs",
+    "compile": "npm run check:architecture && tsc -p . && npm run check:folders && npm run check:usage && npm run check:turn-diff && npm run check:open-target && npm run check:tool-card && npm run check:message-map && npm run check:revert-api && npm run check:permissions && npm run check:inbox-api && npm run check:editor-context && npm run check:auto-context && npm run check:chat-surfaces && npm run check:chat-panel && npm run check:chat-search && npm run check:notifications && tsc -p tsconfig.webview.json && npm run build:webview",
     "watch": "tsc -p . --watch",
     "vscode:prepublish": "npm run compile",
     "package": "vsce package",

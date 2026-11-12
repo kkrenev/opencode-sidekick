@@ -48,6 +48,7 @@ OpenCode Sidekick declares its own container in `secondarySidebar`, so OpenCode 
 - **Undo a turn.** The turn card and the message menu of the last user message offer Undo: confirm with the file list, then keep the revert to drop the turn or undo it to put the files and the turn back.
 - **Permissions in the panel.** When the agent needs approval, a pinned card shows the tool, file or command with a risk chip and **Allow once** / **Always allow** / **Reject**; Reject takes an optional reason. Always stores a rule for the project, and the card disappears when the request is answered or expires. Settings can auto-approve read-only tools and list or delete saved rules.
 - **Queue while it works.** A message sent during a turn waits in the server queue instead of blocking the composer: a strip above the composer lists the waiting prompts with **Send now**, **Edit** and **Delete**, the chip reads `N in queue`, and the queue survives tab switches and reloads. Settings switch the busy send between `queue` and `steer`.
+- **Notifications when you look away.** A turn that finishes while the chat is not on screen raises a notification with **Open**; a failed turn uses an error notification, a pending permission asks for approval, and a dropped connection keeps the banner with **Retry** and tells you once. The OpenCode icon in the secondary sidebar shows how many chats have a new reply or a waiting request, `notifications` picks `all` / `errors` / `off`, and `notifyOnlyWhenHidden` (on by default) stays quiet while the chat is in front of you.
 - **Stop button.** Interrupt a running turn without hunting for a key chord.
 
 ## Screens
@@ -120,6 +121,8 @@ Press `Cmd/Ctrl+F` to search the open chat. The find bar sits between the header
 | `opencodeSidekick.contextCompactPercent` | `95` | Context usage percentage that triggers an automatic compaction of the active session. |
 | `opencodeSidekick.queueDelivery` | `queue` | A message sent while the agent works waits in the queue (`queue`) or joins the turn (`steer`). |
 | `opencodeSidekick.autoAttachActiveFile` | `false` | Keep the active workspace file attached to the composer as an automatic chip; remove the chip to dismiss it until you switch files. |
+| `opencodeSidekick.notifications` | `all` | Which finished turns raise a system notification: `all`, `errors` or `off`. The tab badge and the connection banner stay in every mode. |
+| `opencodeSidekick.notifyOnlyWhenHidden` | `true` | Notify only when the chat that needs you is not on screen. Turn it off to notify for every finished turn, even while you watch it. |
 
 The same settings are available in the panel: click the gear in the header, choose **Settings** from the `...` menu, or run `OpenCode: Open Sidekick Settings`.
 

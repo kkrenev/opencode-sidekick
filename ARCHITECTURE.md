@@ -148,6 +148,16 @@ The chat can be opened as one editor tab beside the code (`opencode.sidekick.cha
 - `handle('ready')` never reconnects an established stream: when `this.client` is already set, a new surface only receives the snapshot and the buffered attachments, which is what makes the second surface cheap.
 - The tab title is the session title and its icon is `resources/chat-{running,attention,idle}.svg`: running wins over a pending permission or a connection error, and idle is the fallback. The panel keeps `{ sessionID, directory }` in `PANEL_KEY`; the serializer (`onWebviewPanel:opencode.sidekick.chat`) restores the tab on that session, and closing the tab clears the key without touching the tabs or the session.
 
+## Notifications
+
+A finished turn or a pending permission can raise a system notification with an **Open** button. `src/shared/notification.ts` is the pure policy shared by the host and `npm run check:notifications`: `shouldNotify` walks the mode matrix (`all`, `errors`, `off`), `shouldNotifyApproval` treats a blocking request as news only in `all`, and both stay quiet when `notifyOnlyWhenHidden` is on and the user already sees the chat that needs them.
+
+- `watched` means the window has focus and either the sidebar view (`WebviewView.visible`) or the editor tab (`WebviewPanel.active`) is the surface on screen. `chatPanel.visible` only says the tab exists, so it never decides this.
+- One notification per turn: `execution.started` arms the session, and the first `succeeded` / `failed` / `interrupted` frame consumes the flag, so a reconnect, a replayed frame or the second surface cannot notify twice. `failed` uses `showErrorMessage`, the other outcomes `showInformationMessage`; `Open` activates the tab or focuses the container when the session is gone, and never creates tabs.
+- The container badge is `view.badge = attentionCount(tabs)`: chats with a new reply or a pending request, recomputed on every `state` frame, tab activation, permission answer, view visibility and window focus. The editor tab has no badge API, so its status icon stays the only signal there; `notifications: off` silences the popups only.
+- A dropped event stream or a failed connect shows the persistent banner with **Retry** and makes `snapshot().connected` false while the client is kept for requests; the notification is raised once per outage (`undefined -> message`) and only while the user cannot see the panel. A successful stream reconnect clears the error and brings the chat back online.
+- Settings gains a Notifications section (`All` / `Errors` / `Off` plus the hidden-only switch). The editor tab's attention icon and the tab dots keep working in every mode.
+
 ## Import policy
 
 Imports use explicit file paths rather than global barrel files. This keeps the esbuild bundle tree-shakeable and avoids a large `index.ts` surface that hides dependencies. A slice may add its own public `index.ts` later if it needs to hide internals.

@@ -7,6 +7,8 @@ export type {
   SidekickSettings,
 } from '../../../shared/settings';
 
+export type { NotificationMode } from '../../../shared/notification';
+
 export type { QueueDelivery } from '../../../shared/inbox';
 
 export { SETTING_DEFAULTS as DEFAULT_SETTINGS } from '../../../shared/settings';

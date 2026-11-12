@@ -1,4 +1,5 @@
 import type { QueueDelivery } from './inbox';
+import type { NotificationMode } from './notification';
 
 export type SendKey = 'enter' | 'mod-enter';
 export type ReasoningVisibility = 'collapsed' | 'expanded' | 'hidden';
@@ -39,6 +40,13 @@ export interface SidekickSettings {
    * chip. Off by default; the user can remove the chip like any other.
    */
   readonly autoAttachActiveFile: boolean;
+  /** Which finished turns raise a system notification. */
+  readonly notifications: NotificationMode;
+  /**
+   * Keep notifications for the chats the user is not looking at. Off means
+   * every finished turn notifies, even while the chat is on screen.
+   */
+  readonly notifyOnlyWhenHidden: boolean;
 }
 
 export const SETTING_DEFAULTS: SidekickSettings = {
@@ -60,6 +68,8 @@ export const SETTING_DEFAULTS: SidekickSettings = {
   permissionsAutoApproveSafe: false,
   queueDelivery: 'queue',
   autoAttachActiveFile: false,
+  notifications: 'all',
+  notifyOnlyWhenHidden: true,
 };
 
 /**

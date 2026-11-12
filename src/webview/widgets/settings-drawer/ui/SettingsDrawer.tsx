@@ -3,6 +3,7 @@ import { SettingsActions } from '../../../features/settings/ui/SettingsActions';
 import { SettingsAppearanceSection } from '../../../features/settings/ui/SettingsAppearanceSection';
 import { SettingsBehaviorSection } from '../../../features/settings/ui/SettingsBehaviorSection';
 import { SettingsDefaultsSection } from '../../../features/settings/ui/SettingsDefaultsSection';
+import { SettingsNotificationsSection } from '../../../features/settings/ui/SettingsNotificationsSection';
 import { SettingsPermissionsSection } from '../../../features/settings/ui/SettingsPermissionsSection';
 import { SettingsServerSection } from '../../../features/settings/ui/SettingsServerSection';
 import type { SidekickSettings } from '../../../shared/config/settings';
@@ -56,6 +57,7 @@ export function SettingsDrawer({
           onUpdate={onUpdate}
         />
         <SettingsBehaviorSection settings={settings} onUpdate={onUpdate} />
+        <SettingsNotificationsSection settings={settings} onUpdate={onUpdate} />
         <SettingsPermissionsSection
           settings={settings}
           saved={savedPermissions}

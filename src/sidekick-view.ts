@@ -48,6 +48,14 @@ import {
   type SurfaceState,
 } from './shared/chat-surface';
 import { resolveOpenTarget, relativeToRoot } from './shared/open-target';
+import {
+  attentionCount,
+  notificationText,
+  notificationTitle,
+  shouldNotify,
+  shouldNotifyApproval,
+  type TurnOutcome,
+} from './shared/notification';
 import { TOOL_OUTPUT_MAX_CHARS } from './shared/tool-card';
 import type { SessionRuntimeState } from './shared/session-runtime';
 import { DELTA_BUFFER_LIMIT, DeltaChunk } from './shared/session-stream';
@@ -357,6 +365,8 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
   private queueLoaded = new Set<string>();
   /** Answered ids; a stale list or a replayed frame must not resurrect them. */
   private permissionResolved = new Set<string>();
+  /** Request ids that already raised a notification; a replay stays silent. */
+  private permissionNotified = new Set<string>();
   private savedPermissions: SavedPermission[] = [];
   private savedPermissionsError: string | undefined;
   /** Shown instead of the list when there is no project to scope it to. */
@@ -367,6 +377,16 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
   private readonly chatIcons: Readonly<Record<ChatPanelStatus, vscode.Uri>>;
   /** Session the editor tab shows; a change of it is persisted for restore. */
   private panelSessionID: string | undefined;
+  private windowSubscriptions: vscode.Disposable[] = [];
+  /** Sidebar view while it exists; `undefined` means the view was disposed. */
+  private view: vscode.WebviewView | undefined;
+  private visibilitySubscription: vscode.Disposable | undefined;
+  /** The sidebar view is on screen and expanded. */
+  private sidebarVisible = false;
+  /** The editor tab is the one on screen and has focus. */
+  private panelActive = false;
+  /** Turns with a notification still owed: armed on start, dropped on send. */
+  private notifyArmed = new Map<string, boolean>();
 
   constructor(private readonly context: vscode.ExtensionContext) {
     this.folders = vscode.workspace.workspaceFolders ?? [];
@@ -393,6 +413,16 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
       }),
       vscode.window.onDidChangeActiveTextEditor((editor) => {
         this.onActiveEditorChanged(editor);
+      }),
+    ];
+    this.windowSubscriptions = [
+      // A turn that finished while the window was in the background stays on
+      // the badge until the user comes back to the chat on screen.
+      vscode.window.onDidChangeWindowState((state) => {
+        if (state.focused) {
+          this.clearActiveAttention();
+        }
+        this.syncBadge();
       }),
     ];
     this.configSubscription = vscode.workspace.onDidChangeConfiguration((event) => {
@@ -442,7 +472,16 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
       onDispose: () => {
         this.surfaces.remove(CHAT_SURFACE_ID);
         this.panelSessionID = undefined;
+        this.panelActive = false;
         void this.context.workspaceState.update(PANEL_KEY, undefined);
+        this.syncBadge();
+      },
+      onViewState: (state) => {
+        this.panelActive = state.visible && state.active;
+        if (this.panelActive) {
+          this.clearActiveAttention();
+        }
+        this.syncBadge();
       },
     });
   }
@@ -485,6 +524,16 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
     return Object.values(this.tabsState.folders).some((tabs) => tabs.open.includes(id));
   }
 
+  /** Workspace folder that owns a tab, whichever folder is in use. */
+  private folderOfTab(id: string): string | undefined {
+    for (const [directory, tabs] of Object.entries(this.tabsState.folders)) {
+      if (tabs.open.includes(id)) {
+        return directory;
+      }
+    }
+    return undefined;
+  }
+
   async resolveWebviewView(view: vscode.WebviewView): Promise<void> {
     const surface: Surface = {
       id: SIDEBAR_SURFACE_ID,
@@ -493,6 +542,17 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
       webview: view.webview,
     };
     this.surfaces.add(surface);
+    this.view = view;
+    this.sidebarVisible = view.visible;
+    this.visibilitySubscription?.dispose();
+    this.visibilitySubscription = view.onDidChangeVisibility(() => {
+      this.sidebarVisible = view.visible;
+      if (this.sidebarVisible) {
+        // The chat the user just revealed no longer waits for them.
+        this.clearActiveAttention();
+      }
+      this.syncBadge();
+    });
     view.webview.options = {
       enableScripts: true,
       localResourceRoots: [this.context.extensionUri, this.context.globalStorageUri],
@@ -505,11 +565,21 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
     }
     view.onDidDispose(() => {
       this.surfaces.remove(SIDEBAR_SURFACE_ID);
+      if (this.view !== view) {
+        return;
+      }
+      this.view = undefined;
+      this.sidebarVisible = false;
+      this.visibilitySubscription?.dispose();
+      this.visibilitySubscription = undefined;
+      // Without a view there is no badge to show; the attention flags stay.
+      this.syncBadge();
     });
     view.webview.onDidReceiveMessage((message) => {
       this.surfaces.markActive(SIDEBAR_SURFACE_ID);
       void this.handle(surface, message as { type: string; [key: string]: unknown });
     });
+    this.syncBadge();
   }
 
   browserUrl(): string | undefined {
@@ -842,6 +912,13 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
       subscription.dispose();
     }
     this.folderSubscriptions = [];
+    for (const subscription of this.windowSubscriptions) {
+      subscription.dispose();
+    }
+    this.windowSubscriptions = [];
+    this.visibilitySubscription?.dispose();
+    this.visibilitySubscription = undefined;
+    this.view = undefined;
     if (this.refreshTimer) {
       clearTimeout(this.refreshTimer);
       this.refreshTimer = undefined;
@@ -890,6 +967,11 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
     this.tabMissing.delete(session.id);
     if (session.running) {
       this.tabRunning.add(session.id);
+      if (!this.turnStarts.has(session.id)) {
+        // The turn began before this window loaded, so no `execution.started`
+        // armed it; it still owes one notification when it ends.
+        this.notifyArmed.set(session.id, true);
+      }
     } else {
       this.tabRunning.delete(session.id);
     }
@@ -1108,6 +1190,7 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
     // server, so the flag has to be read before the notice is cleared.
     const stale = this.tabStale.has(id);
     this.tabUnread.delete(id);
+    this.syncBadge();
     const seeded = this.hasTranscript(id);
     // Paint the cached transcript right away: the tab switch must not wait on
     // the network and must not drop the pages the user already scrolled to.
@@ -1342,6 +1425,7 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
       this.stopStream = this.client.subscribe(
         (event) => this.onEvent(event),
         () => this.onStreamReconnect(),
+        (error) => this.onStreamError(error),
       );
 
       await Promise.all([
@@ -1369,9 +1453,14 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
       await this.loadQueue();
       this.post({ type: 'state', state: this.snapshot() });
     } catch (error) {
+      const firstFailure = this.lastError === undefined;
       this.lastError = error instanceof Error ? error.message : String(error);
       this.client = undefined;
       this.post({ type: 'state', state: this.snapshot() });
+      if (firstFailure) {
+        // One notification per outage: the banner stays until a retry works.
+        this.maybeNotifyConnectionError();
+      }
     } finally {
       this.loading = false;
     }
@@ -1966,6 +2055,7 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
       sessionID,
       removePermission(this.permissions.get(sessionID) ?? [], requestID),
     );
+    this.syncBadge();
   }
 
   /**
@@ -2233,14 +2323,17 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
    * Answers a read-only tool request on its own when the setting is on. Only
    * `once` is ever sent: an automatic answer never creates a saved rule, and
    * the setting is not applied retroactively to requests already on screen.
+   *
+   * Returns true when this request is answered here, so it does not also raise
+   * a notification for a card the user never sees.
    */
-  private maybeAutoApprove(request: PermissionRequest): void {
+  private maybeAutoApprove(request: PermissionRequest): boolean {
     if (!this.settings.permissionsAutoApproveSafe || !isAutoApprovable(request)) {
-      return;
+      return false;
     }
     const client = this.client;
     if (!client || this.permissionSending.has(request.id)) {
-      return;
+      return false;
     }
     void (async () => {
       this.permissionSending.add(request.id);
@@ -2271,6 +2364,7 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
         this.post({ type: 'state', state: this.snapshot() });
       }
     })();
+    return true;
   }
 
   /** Saved rules of the active project, shown in Settings. */
@@ -2994,6 +3088,9 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
     if (!this.client) {
       return;
     }
+    // The stream is live again: the banner goes away with the error that
+    // raised it, and the snapshot reports the chat as connected.
+    this.lastError = undefined;
     const activeID = this.session?.id;
     for (const id of this.allTabIDs()) {
       if (id !== activeID) {
@@ -3018,6 +3115,26 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
       }
       this.post({ type: 'state', state: this.snapshot() });
     })();
+  }
+
+  /**
+   * The event stream dropped while the panel is alive. The client is kept so
+   * requests still work, but the chat is not live: the snapshot goes offline
+   * (banner with Retry) and the outage is notified once, like a failed connect.
+   */
+  private onStreamError(error: unknown): void {
+    if (!this.client) {
+      return;
+    }
+    const firstFailure = this.lastError === undefined;
+    this.lastError = error instanceof Error ? error.message : String(error);
+    if (!firstFailure) {
+      // The retry loop fails again every 1.5s: one state and one notification
+      // per outage is enough.
+      return;
+    }
+    this.post({ type: 'state', state: this.snapshot() });
+    this.maybeNotifyConnectionError();
   }
 
   private scheduleSessionTail(sessionID: string, computeDiff = false): void {
@@ -4030,6 +4147,9 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
         this.tabRunning.add(sessionID);
         // A fresh turn replaces the "new reply" hint of the previous one.
         this.tabUnread.delete(sessionID);
+        // One notification per turn, whatever the number of surfaces and
+        // however many completion frames arrive.
+        this.notifyArmed.set(sessionID, true);
         const cached = this.tabSessions.get(sessionID);
         if (cached) {
           this.tabSessions.set(sessionID, { ...cached, running: true });
@@ -4058,6 +4178,7 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
         if (cached) {
           this.tabSessions.set(sessionID, { ...cached, running: false });
         }
+        this.maybeNotifyTurn(sessionID, turnOutcomeOf(event.type));
       }
       if (!isActive) {
         if (sessionID && this.hasTab(sessionID)) {
@@ -4074,6 +4195,11 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
         }
         this.post({ type: 'state', state: this.snapshot() });
         return;
+      }
+      if (sessionID && !this.isWatched()) {
+        // The chat is open but the user is elsewhere: the badge keeps the
+        // finished turn until the window or the view comes back.
+        this.tabUnread.add(sessionID);
       }
       this.busy = false;
       void (async () => {
@@ -4228,6 +4354,10 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
           }
         }
         if (sessionID && (event.type === 'session.deleted' || event.type === 'session.archived')) {
+          // A chat that is gone or archived in another client cannot be opened
+          // anymore: its reply dot and the badge go with it.
+          this.tabUnread.delete(sessionID);
+          this.notifyArmed.delete(sessionID);
           this.forgetCompaction(sessionID);
           this.forgetPermissions(sessionID);
           this.queues.delete(sessionID);
@@ -4247,6 +4377,7 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
           session: this.session,
           tabs: this.tabEntries(),
         });
+        this.syncBadge();
       });
       return;
     }
@@ -4486,7 +4617,9 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
       upsertPermission(this.pendingPermissions(request.sessionID), request),
     );
     this.post({ type: 'state', state: this.snapshot() });
-    this.maybeAutoApprove(request);
+    if (!this.maybeAutoApprove(request)) {
+      this.maybeNotifyPermission(request);
+    }
   }
 
   /** A reply from this panel or another client: the card goes away. */
@@ -4541,6 +4674,8 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
         // A reload starts with an empty tray, so the automatic chip returns.
         this.autoContextUri = undefined;
         void this.syncAutoContext();
+        // The surface the user just opened no longer needs the badge.
+        this.clearActiveAttention();
         return;
       }
       case 'openInEditor': {
@@ -5106,7 +5241,7 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
   private snapshot(): Record<string, unknown> {
     const folders = this.folderRefs();
     return {
-      connected: this.client !== undefined,
+      connected: this.client !== undefined && this.lastError === undefined,
       error: this.lastError,
       directory: this.activeDirectory,
       workspace:
@@ -5184,6 +5319,7 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
     this.chatPanel.post(message);
     if (message.type === 'state') {
       this.syncChatChrome();
+      this.syncBadge();
     }
   }
 
@@ -5250,6 +5386,170 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
     this.panelSessionID = sessionID;
     const target: StoredPanelTarget = { sessionID, directory: this.activeDirectory };
     await this.context.workspaceState.update(PANEL_KEY, target);
+  }
+
+  /**
+   * The user is looking at this chat: the window has focus and either the
+   * sidebar view or the editor tab is the surface on screen. `chatPanel.visible`
+   * is not enough — it only says the tab exists.
+   */
+  private isWatched(): boolean {
+    return vscode.window.state.focused && (this.sidebarVisible || this.panelActive);
+  }
+
+  /**
+   * Number of chats waiting for the user on the container icon. The editor tab
+   * has no badge API, so its status icon stays the only signal there.
+   */
+  private syncBadge(): void {
+    const view = this.view;
+    if (!view) {
+      return;
+    }
+    const count = attentionCount(
+      this.allTabIDs().map((id) => ({
+        unread: this.tabUnread.has(id),
+        permissions: this.pendingPermissions(id).length,
+      })),
+    );
+    view.badge =
+      count > 0
+        ? {
+            value: count,
+            tooltip: `${count} ${count === 1 ? 'chat needs' : 'chats need'} attention`,
+          }
+        : undefined;
+  }
+
+  /** The chat on screen no longer waits for the user; the badge follows. */
+  private clearActiveAttention(): void {
+    if (!this.isWatched()) {
+      return;
+    }
+    const id = this.session?.id;
+    if (id !== undefined) {
+      this.tabUnread.delete(id);
+    }
+    this.syncBadge();
+  }
+
+  /**
+   * A turn ended: the armed flag makes this the only notification for it, so a
+   * second completion frame, a reconnect or the other surface changes nothing.
+   */
+  private maybeNotifyTurn(sessionID: string, outcome: TurnOutcome): void {
+    if (!this.notifyArmed.delete(sessionID)) {
+      return;
+    }
+    if (!this.hasTab(sessionID)) {
+      // A turn of a chat the panel does not track has nothing to open.
+      return;
+    }
+    const notify = shouldNotify({
+      mode: this.settings.notifications,
+      onlyWhenHidden: this.settings.notifyOnlyWhenHidden,
+      outcome,
+      sessionActive: this.session?.id === sessionID,
+      watched: this.isWatched(),
+    });
+    if (!notify) {
+      return;
+    }
+    void this.notifyTurn(sessionID, outcome);
+  }
+
+  private async notifyTurn(sessionID: string, outcome: TurnOutcome): Promise<void> {
+    const text = notificationText(this.tabTitle(sessionID), outcome);
+    const picked =
+      outcome === 'failed'
+        ? await vscode.window.showErrorMessage(text, 'Open')
+        : await vscode.window.showInformationMessage(text, 'Open');
+    if (picked === 'Open') {
+      await this.revealSession(sessionID);
+    }
+  }
+
+  /** A request that blocks a hidden chat is as urgent as a finished turn. */
+  private maybeNotifyPermission(request: PermissionRequest): void {
+    if (this.permissionNotified.has(request.id)) {
+      return;
+    }
+    const notify = shouldNotifyApproval({
+      mode: this.settings.notifications,
+      onlyWhenHidden: this.settings.notifyOnlyWhenHidden,
+      sessionActive: this.session?.id === request.sessionID,
+      watched: this.isWatched(),
+    });
+    if (!notify) {
+      return;
+    }
+    rememberResolved(this.permissionNotified, request.id);
+    void vscode.window
+      .showInformationMessage(
+        `Needs approval: ${notificationTitle(this.tabTitle(request.sessionID))}`,
+        'Open',
+      )
+      .then((picked) => {
+        if (picked === 'Open') {
+          return this.revealSession(request.sessionID);
+        }
+        return undefined;
+      });
+  }
+
+  /**
+   * The banner with Retry is already on screen, so the notification only covers
+   * a lost connection the user cannot see; `lastError` is set once per outage.
+   */
+  private maybeNotifyConnectionError(): void {
+    if (this.isWatched() || this.settings.notifications === 'off') {
+      return;
+    }
+    void vscode.window.showErrorMessage('OpenCode is not reachable', 'Retry').then((picked) => {
+      if (picked === 'Retry') {
+        void this.reload();
+      }
+    });
+  }
+
+  private tabTitle(sessionID: string): string {
+    return (
+      this.tabSessions.get(sessionID)?.title ||
+      (this.session?.id === sessionID ? this.session.title : '') ||
+      'Untitled'
+    );
+  }
+
+  /**
+   * Brings the chat of a notification forward. A session that is no longer a
+   * tab (deleted, or of a folder that is not open) only reveals the container:
+   * nothing is created and no tab state changes.
+   */
+  private async revealSession(sessionID: string): Promise<void> {
+    try {
+      const folder = this.folderOfTab(sessionID);
+      if (folder !== undefined && folder !== this.activeDirectory) {
+        // Open on a chat of another workspace folder means switching to it:
+        // `activateTab` only sees the tabs of the folder in use.
+        await this.selectDirectory(folder);
+      }
+      const known = this.hasTab(sessionID);
+      if (known) {
+        await this.activateTab(sessionID);
+      }
+      if (known && this.chatPanel.visible) {
+        await this.chatPanel.show({
+          sessionID,
+          title: this.tabTitle(sessionID),
+          column: vscode.ViewColumn.Beside,
+        });
+        return;
+      }
+      await vscode.commands.executeCommand('opencode.sidekick.focus');
+    } catch (error) {
+      // An action on a notification must never become an unhandled rejection.
+      void vscode.window.showErrorMessage(describeError(error));
+    }
   }
 
   private fail(error: unknown): void {
@@ -5547,6 +5847,14 @@ function lastUserMessageID(messages: readonly UiMessage[] | undefined): string |
     }
   }
   return undefined;
+}
+
+/** Completion frame of a turn, as the notification policy names it. */
+function turnOutcomeOf(type: string): TurnOutcome {
+  if (type === 'session.execution.failed') {
+    return 'failed';
+  }
+  return type === 'session.execution.interrupted' ? 'interrupted' : 'succeeded';
 }
 
 function eventSessionID(event: StreamEvent): string | undefined {

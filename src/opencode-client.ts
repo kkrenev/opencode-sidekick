@@ -598,9 +598,10 @@ export class OpenCodeClient {
   subscribe(
     onEvent: (event: StreamEvent) => void,
     onReconnect?: () => void,
+    onError?: (error: unknown) => void,
   ): () => void {
     const controller = new AbortController();
-    void this.stream(onEvent, controller.signal, onReconnect);
+    void this.stream(onEvent, controller.signal, onReconnect, onError);
     return () => controller.abort();
   }
 
@@ -608,8 +609,10 @@ export class OpenCodeClient {
     onEvent: (event: StreamEvent) => void,
     signal: AbortSignal,
     onReconnect?: () => void,
+    onError?: (error: unknown) => void,
   ): Promise<void> {
     let opened = false;
+    let reported = false;
     while (!signal.aborted) {
       try {
         const response = await fetch(new URL('/api/event', this.endpoint.url), {
@@ -622,15 +625,22 @@ export class OpenCodeClient {
         if (!response.ok || !response.body) {
           throw new Error(`Event stream rejected with ${response.status}`);
         }
-        if (opened) {
+        // A stream that comes back after a drop is a reconnect even when the
+        // first attempt after the drop is the one that succeeds.
+        if (opened || reported) {
           onReconnect?.();
         }
         opened = true;
+        reported = false;
         await readEventStream(response.body, onEvent, signal);
-      } catch {
+      } catch (error) {
         if (signal.aborted) {
           return;
         }
+        // A dropped stream is reported to the panel, which owns the banner and
+        // the notification; the retry loop below keeps running on its own.
+        reported = true;
+        onError?.(error);
       }
       if (signal.aborted) {
         return;

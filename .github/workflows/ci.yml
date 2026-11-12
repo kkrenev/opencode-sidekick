@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    name: Architecture, compile, unit tests and package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run check:architecture
+      - run: npm run compile
+      - run: npm run test:unit
+      - run: npm run package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: opencode-sidekick-vsix
+          path: '*.vsix'
+          if-no-files-found: error
+
+  smoke:
+    name: Extension host smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # The downloaded VS Code is ~500 MB; the user-data folder is left out of
+      # the cache so every run starts from a clean window. The key carries the
+      # run id because the stable build is downloaded at runtime and cannot be
+      # hashed: a reused key would keep an outdated VS Code forever, while
+      # restore-keys still reuses the newest cached download.
+      - uses: actions/cache@v4
+        with:
+          path: .vscode-test/vscode-*
+          key: vscode-test-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: vscode-test-${{ runner.os }}-
+      - run: xvfb-run -a npm run test:smoke

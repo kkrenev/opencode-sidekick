@@ -133,6 +133,18 @@ The extension reads the running server's endpoint and credentials from `~/.local
 
 The webview is a React 19 app bundled with esbuild into `media/main.js` and inlined into the panel with a nonce-based CSP. The source follows a pragmatic Feature-Sliced Design layout (`app -> widgets -> features -> entities -> shared`); see [ARCHITECTURE.md](ARCHITECTURE.md). Everything stays on your machine. No proxy process, no iframe, no extra port.
 
+## Development
+
+```bash
+npm install
+npm run compile     # type-check, architecture checks and the webview bundle
+npm test            # unit tests: host logic in node, webview components in jsdom
+npm run test:smoke  # activates the extension in a downloaded VS Code
+npm run package     # builds the .vsix
+```
+
+`npm test` is the fast gate. Vitest runs in two configs: node for message mapping, stream deltas, the palette and the formatters, and jsdom for the composer, chat header, tab menu and attachment tray. `npm run test:smoke` launches a stable VS Code through `@vscode/test-electron` and checks that the extension activates, that every command in the manifest is registered and that the view container resolves; on Linux run it as `xvfb-run -a npm run test:smoke`. GitHub Actions runs the unit and smoke jobs on every push and pull request.
+
 ## Notes
 
 - If the OpenCode server restarts with new credentials, run **Reload OpenCode Sidekick**.

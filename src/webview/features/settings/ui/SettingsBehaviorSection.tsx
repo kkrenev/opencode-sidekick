@@ -1,5 +1,10 @@
 import * as React from 'react';
-import type { ReasoningVisibility, SendKey, SidekickSettings } from '../../../shared/config/settings';
+import type {
+  QueueDelivery,
+  ReasoningVisibility,
+  SendKey,
+  SidekickSettings,
+} from '../../../shared/config/settings';
 import { Segmented } from '../../../shared/ui/controls/Segmented';
 import { SettingRow } from '../../../shared/ui/controls/SettingRow';
 import { Switch } from '../../../shared/ui/controls/Switch';
@@ -25,10 +30,29 @@ export function SettingsBehaviorSection({
             onChange={(value) => onUpdate('sendKey', value)}
           />
         </SettingRow>
+        <SettingRow label="While working" hint="Queue the message or steer the turn.">
+          <Segmented<QueueDelivery>
+            value={settings.queueDelivery}
+            options={[
+              { value: 'queue', label: 'Queue' },
+              { value: 'steer', label: 'Steer' },
+            ]}
+            onChange={(value) => onUpdate('queueDelivery', value)}
+          />
+        </SettingRow>
         <SettingRow label="Auto-scroll" hint="Follow streamed output.">
           <Switch
             checked={settings.autoScroll}
             onChange={(value) => onUpdate('autoScroll', value)}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Active file"
+          hint="Attach the editor file automatically as a chip."
+        >
+          <Switch
+            checked={settings.autoAttachActiveFile}
+            onChange={(value) => onUpdate('autoAttachActiveFile', value)}
           />
         </SettingRow>
         <SettingRow label="Timestamps" hint="Show message times.">

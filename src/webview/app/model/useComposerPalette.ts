@@ -18,6 +18,7 @@ export function useComposerPalette({
   inputRef,
   dismissPopover,
   onLocalAction,
+  onCaret,
 }: {
   data: AppData;
   draft: string;
@@ -25,6 +26,7 @@ export function useComposerPalette({
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
   dismissPopover: () => void;
   onLocalAction: (action: string) => void;
+  onCaret: (caret: number) => void;
 }) {
   const [palette, setPalette] = React.useState<PaletteState | null>(null);
   const [activeIndex, setActiveIndex] = React.useState(0);
@@ -138,9 +140,10 @@ export function useComposerPalette({
       } else {
         inputRef.current?.focus();
         inputRef.current?.setSelectionRange(nextCaret, nextCaret);
+        onCaret(nextCaret);
       }
     },
-    [palette, paletteItems, draft, setDraft, inputRef, onLocalAction],
+    [palette, paletteItems, draft, setDraft, inputRef, onLocalAction, onCaret],
   );
 
   return {

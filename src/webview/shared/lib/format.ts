@@ -37,3 +37,30 @@ export function sendHint(sendKey: 'enter' | 'mod-enter'): string {
     ? 'Enter send · Shift+Enter new line'
     : 'Cmd/Ctrl+Enter send · Enter new line';
 }
+
+/** `1.4k` / `1.4M`, and `—` for a value that is not known yet. */
+export function formatTokens(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return '—';
+  }
+  const rounded = Math.max(0, value);
+  if (rounded < 1000) {
+    return String(Math.round(rounded));
+  }
+  if (rounded < 1_000_000) {
+    return `${trimDecimal(rounded / 1000)}k`;
+  }
+  return `${trimDecimal(rounded / 1_000_000)}M`;
+}
+
+/** `$0.0123`; an empty string when the session cost is still zero. */
+export function formatCost(cost: number | null | undefined): string {
+  if (cost === null || cost === undefined || !Number.isFinite(cost) || cost <= 0) {
+    return '';
+  }
+  return `$${cost.toFixed(4)}`;
+}
+
+function trimDecimal(value: number): string {
+  return value.toFixed(1).replace(/\.0$/, '');
+}

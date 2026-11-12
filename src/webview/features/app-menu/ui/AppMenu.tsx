@@ -1,6 +1,6 @@
 import * as React from 'react';
-import { Icon, type IconName } from '../../../shared/ui/Icon';
 import { Popover } from '../../../shared/ui/Popover';
+import { MenuRow } from '../../../shared/ui/MenuRow';
 
 export function AppMenu({
   anchor,
@@ -47,23 +47,3 @@ export function AppMenu({
   );
 }
 
-function MenuRow({
-  icon,
-  label,
-  onClick,
-}: {
-  icon: IconName;
-  label: string;
-  onClick: () => void;
-}): React.ReactElement {
-  return (
-    <button className="row" type="button" onClick={onClick}>
-      <span className="row-glyph">
-        <Icon name={icon} />
-      </span>
-      <span className="row-main">
-        <span className="row-title">{label}</span>
-      </span>
-    </button>
-  );
-}

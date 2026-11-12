@@ -21,11 +21,20 @@ export const ICONS = {
   checkSmall: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m3.6 8.4 2.8 2.8 6-6"/></svg>',
   shell: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="m4.4 5.4 2.6 2.6-2.6 2.6M9 10.6h2.8"/></svg>',
   file: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2.6h5l3 3v7.8H4z"/><path d="M9 2.6v3h3"/></svg>',
+  folder: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2.4 4.5h4l1.4 1.7h5.8v5.9a1.4 1.4 0 0 1-1.4 1.4H3.8a1.4 1.4 0 0 1-1.4-1.4z"/></svg>',
+  image: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2.4" y="3.2" width="11.2" height="9.6" rx="1.8"/><path d="m3.4 11 3.1-3.2 2.2 2.2 1.8-1.8 2.3 2.4"/><circle cx="6.1" cy="6.3" r="1"/></svg>',
+  cursor: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.9v8.6l2.2-2.1 1.5 3.2 1.8-.8-1.5-3.2h3z"/></svg>',
   search: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><circle cx="7.2" cy="7.2" r="4"/><path d="m10.2 10.2 2.4 2.4"/></svg>',
   check: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m3.6 8.4 2.8 2.8 6-6"/></svg>',
   alert: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 5.2v3.6M8 11.2v.2"/><circle cx="8" cy="8" r="5.6"/></svg>',
   gear: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.2"/><path d="M8 2.3v1.4M8 12.3v1.4M2.3 8h1.4M12.3 8h1.4M4 4l1 1M11 11l1 1M12 4l-1 1M5 11l-1 1"/></svg>',
   sliders: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5h10M3 8h10M3 11.5h10"/><circle cx="6" cy="4.5" r="1.4" fill="currentColor" stroke="none"/><circle cx="10" cy="8" r="1.4" fill="currentColor" stroke="none"/><circle cx="5.5" cy="11.5" r="1.4" fill="currentColor" stroke="none"/></svg>',
+  pin: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="m9.6 2.6 3.8 3.8-1.7.5-2.4 2.4.4 1.9-1.3 1.3-4.9-4.9 1.3-1.3 1.9.4L9.1 4.3z"/><path d="m6.2 9.8-2.9 2.9"/></svg>',
+  archive: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2.6" y="3.1" width="10.8" height="3" rx="1"/><path d="M3.6 6.1v5.4a1 1 0 0 0 1 1h6.8a1 1 0 0 0 1-1V6.1M6.4 8.6h3.2"/></svg>',
+  fork: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="4.4" cy="4" r="1.7"/><circle cx="4.4" cy="12" r="1.7"/><circle cx="11.6" cy="8" r="1.7"/><path d="M6.1 4.8c2.6.6 3.3 1.4 4 2.5M6.1 11.2c2.6-.6 3.3-1.4 4-2.5"/></svg>',
+  rename: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12.8h2.3L12.6 5.5a1.2 1.2 0 0 0 0-1.7l-.4-.4a1.2 1.2 0 0 0-1.7 0L3.2 10.5z"/></svg>',
+  copy: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="5.8" y="5.8" width="7.4" height="7.4" rx="1.6"/><path d="M10.2 3.2H4.4a1.6 1.6 0 0 0-1.6 1.6v5.8"/></svg>',
+  undo: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12.6 8.8a4.7 4.7 0 1 1-1.4-3.3"/><path d="M12.9 2.8v2.6h-2.6"/></svg>',
 } as const;
 
 export type IconName = keyof typeof ICONS;

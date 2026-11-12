@@ -9,9 +9,13 @@ const INITIAL_DATA: AppData = {
   error: null,
   directory: '',
   workspace: '',
+  folders: [],
+  activeDirectory: '',
   session: null,
   sessions: [],
+  tabs: [],
   messages: [],
+  history: { hasMoreOlder: false, loadingOlder: false },
   models: [],
   agents: [],
   commands: [],
@@ -22,6 +26,19 @@ const INITIAL_DATA: AppData = {
   busy: false,
   model: null,
   agent: null,
+  runtime: null,
+  usage: { used: null, level: 'unknown', compacting: false, compacted: false },
+  notices: [],
+  turnDiff: null,
+  revert: null,
+  revertPending: false,
+  permissions: [],
+  permissionSending: [],
+  queue: [],
+  queuePending: [],
+  savedPermissions: [],
+  savedPermissionsError: null,
+  savedPermissionsHint: null,
 };
 
 export function useSidekickData({
@@ -50,6 +67,7 @@ export function useSidekickData({
               ...nextState,
               defaults: nextState.defaults ?? previous.defaults,
               settings: nextState.settings ?? previous.settings,
+              history: nextState.history ?? previous.history,
             }));
           }
           break;
@@ -65,6 +83,7 @@ export function useSidekickData({
             ...previous,
             sessions: message.sessions ?? previous.sessions,
             session: message.session ?? previous.session,
+            tabs: message.tabs ?? previous.tabs,
           }));
           break;
         case 'busy':
@@ -79,6 +98,11 @@ export function useSidekickData({
           break;
         case 'error':
           showToast(message.message || 'OpenCode request failed');
+          break;
+        case 'toast':
+          if (message.text) {
+            showToast(message.text);
+          }
           break;
         case 'focus':
           onFocus();

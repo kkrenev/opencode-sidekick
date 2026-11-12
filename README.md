@@ -15,7 +15,7 @@ OpenCode Sidekick declares its own container in `secondarySidebar`, so OpenCode 
 | Where it opens | Terminal in a new editor column | Webview in the secondary sidebar |
 | Editor layout | Split into two columns | Untouched |
 | Typing, pasting, code blocks | TUI inside a terminal | Native textarea and markdown |
-| Sessions | One terminal at a time | Built-in history, search and new sessions |
+| Sessions | One terminal at a time | Session tabs plus built-in history and search |
 | Same sessions, models, config | Yes | Yes |
 
 ![OpenCode icon sitting in the secondary sidebar activity bar beside Copilot](assets/activitybar.png)
@@ -25,6 +25,13 @@ OpenCode Sidekick declares its own container in `secondarySidebar`, so OpenCode 
 - **The real OpenCode agent.** The panel talks to the OpenCode server over its HTTP API and event stream, so sessions, models, agents, tools and permissions are the same ones your CLI uses.
 - **A UI built for a narrow column.** User bubbles, streamed markdown, syntax-highlighted code blocks with a copy button, collapsible reasoning, and compact tool cards with live status.
 - **Working text input.** Paste with `Cmd+V` / `Ctrl+V`, multi-line prompts with `Shift+Enter`, `Enter` to send.
+- **Real attachments.** Attach files, whole folders, the current editor selection, Problems diagnostics, or a screenshot with `Cmd/Ctrl+Shift+A`: a screen region on macOS, or an image pasted from the clipboard on Windows/Linux. Right-click a file or an editor tab for **Add File to Chat**, **Add Selection to Chat** and **Add Problems to Chat**, or run the same commands from the palette; every one lands as a chip in the composer. Drop files onto the composer or paste an image; the tray shows 64px previews, names and sizes, and lets you remove any item. Up to 10 attachments of 10 MB each per prompt.
+- **Attachments in the history.** A screenshot or image stays in the transcript after a reload and opens a lightbox with **Open in editor**; any other file becomes a chip with its name, workspace-relative path and **Open**, and the path on a `read` / `write` / `edit` tool card opens that file at the reported line.
+- **Session tabs.** Open as many sessions as you need, switch with `Cmd/Ctrl+1..9`, close with `Cmd/Ctrl+W` or a middle click. Open tabs and the active tab survive a window reload.
+- **A menu on every tab.** Right-click a tab to rename it in place, pin it first, archive it, fork it into a separate session, copy its session ID or delete it. Pinned tabs stay at the front and cannot be closed by accident.
+- **Per-tab state.** Each tab keeps its draft, caret, scroll position, and expanded blocks, so switching chats does not lose what you were writing or reading.
+- **One chat per folder.** In a multi-root workspace the header shows a folder picker: each folder has its own tabs, active session, agent, model, commands, skills and file search, and a new chat draft is remembered per folder.
+- **Long chats stay fast.** The transcript loads the newest page first and pages in older messages as you scroll up, keeps a constant number of rendered messages and a `Jump to latest` button, and refreshes only the tail while the agent works.
 - **Session history.** Grouped by Today / Yesterday / Previous 7 days / Older, with search, one-click switching and delete.
 - **New sessions in one click.** The `+` button in the header, or `Cmd+Alt+N`.
 - **Searchable model picker.** Filter the server's model list by name, id or provider, then switch without leaving the composer.
@@ -34,6 +41,11 @@ OpenCode Sidekick declares its own container in `secondarySidebar`, so OpenCode 
 - **File and skill attachments.** Selected files and skills are sent with the prompt using the OpenCode attachment API.
 - **Defaults that show up.** New sessions use configured model, effort and mode defaults, and the composer shows the server defaults when a session has no explicit selection.
 - **Settings that stay put.** A settings drawer controls defaults, send key, auto-scroll, timestamps, reasoning visibility, compact tools, accent color, density, font size, CLI path and server auto-start. Changes apply immediately and do not reset your draft.
+- **Context meter.** The composer shows how much of the model's context window the session uses, with cumulative tokens and cost in the tooltip. It warns at 80% with a **Compact** button and compacts the active session automatically at 95%; both thresholds are configurable.
+- **Review a turn's changes.** When a turn ends, a footer card shows `N files · +A −D`; **Review** opens a diff panel with collapsible files, ± highlighting, Prev/Next across loaded turns, Copy patch, and click-to-open at the first changed line.
+- **Undo a turn.** The turn card and the message menu of the last user message offer Undo: confirm with the file list, then keep the revert to drop the turn or undo it to put the files and the turn back.
+- **Permissions in the panel.** When the agent needs approval, a pinned card shows the tool, file or command with a risk chip and **Allow once** / **Always allow** / **Reject**; Reject takes an optional reason. Always stores a rule for the project, and the card disappears when the request is answered or expires. Settings can auto-approve read-only tools and list or delete saved rules.
+- **Queue while it works.** A message sent during a turn waits in the server queue instead of blocking the composer: a strip above the composer lists the waiting prompts with **Send now**, **Edit** and **Delete**, the chip reads `N in queue`, and the queue survives tab switches and reloads. Settings switch the busy send between `queue` and `steer`.
 - **Stop button.** Interrupt a running turn without hunting for a key chord.
 
 ## Screens
@@ -60,6 +72,10 @@ Or in VS Code: Extensions view → `...` → **Install from VSIX**.
 
 The panel opens on your most recent session for the current workspace. Use `+` for a new one, or the title to browse history.
 
+The same chat can sit beside your code: `OpenCode: Open Chat in Editor Tab`, or **Open in editor tab** in a tab's context menu, opens one editor tab that follows the active session. Its title is the session name and its icon shows whether the agent is running, waits for an answer or is idle. Closing the tab keeps the session in the sidebar, and a window reload brings the tab back.
+
+In a multi-root workspace the folder picker in the header switches the panel to another folder. Until you pick one by hand (and while a turn is still running) the panel follows the folder of the active editor. The OpenCode terminal and the `@` file search use the selected folder too.
+
 The composer footer has three pickers: model, effort and mode. Type `/` at the start of a message to filter commands, or `@` anywhere to search files and skills. In a palette, use `Up` / `Down` to move, `Enter` or `Tab` to select, and `Escape` to close it. The `...` menu in the header repeats the main panel actions, including the three pickers.
 
 ## Commands
@@ -67,12 +83,17 @@ The composer footer has three pickers: model, effort and mode. Type `/` at the s
 | Command | Shortcut |
 | --- | --- |
 | `OpenCode: Focus OpenCode Sidekick` | `Cmd+Alt+Shift+O` |
+| `OpenCode: Open Chat in Editor Tab` | |
 | `OpenCode: New Session` | `Cmd+Alt+N` |
 | `OpenCode: Show Session History` | |
 | `OpenCode: Open Sidekick Settings` | |
 | `OpenCode: Reload OpenCode Sidekick` | |
 | `OpenCode: Open OpenCode UI in Browser` | |
 | `OpenCode: Open OpenCode in Integrated Terminal` | |
+| `OpenCode: Attach Screenshot` | |
+| `OpenCode: Add File to Chat` | |
+| `OpenCode: Add Selection to Chat` | |
+| `OpenCode: Add Problems to Chat` | |
 
 ## Settings
 
@@ -91,6 +112,10 @@ The composer footer has three pickers: model, effort and mode. Type `/` at the s
 | `opencodeSidekick.fontSize` | `default` | Base font size: `small`, `default` or `large`. |
 | `opencodeSidekick.cliPath` | `""` | Absolute path to the `opencode` executable. Empty means "first one on `PATH`". |
 | `opencodeSidekick.autoStartServer` | `true` | Start the OpenCode background server when the panel opens and nothing is listening. |
+| `opencodeSidekick.contextWarnPercent` | `80` | Context usage percentage that shows the **Compact** warning in the composer. |
+| `opencodeSidekick.contextCompactPercent` | `95` | Context usage percentage that triggers an automatic compaction of the active session. |
+| `opencodeSidekick.queueDelivery` | `queue` | A message sent while the agent works waits in the queue (`queue`) or joins the turn (`steer`). |
+| `opencodeSidekick.autoAttachActiveFile` | `false` | Keep the active workspace file attached to the composer as an automatic chip; remove the chip to dismiss it until you switch files. |
 
 The same settings are available in the panel: click the gear in the header, choose **Settings** from the `...` menu, or run `OpenCode: Open Sidekick Settings`.
 

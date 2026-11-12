@@ -18,9 +18,12 @@ Application composition and orchestration. This is the only layer allowed to con
 
 - `app/App.tsx` composes widgets, features, overlays, and the composer.
 - `app/model/useSidekickData.ts` owns host messages and the snapshot.
-- `app/model/useSidekickUi.ts` owns local UI state: drawers, popovers, draft, toasts, toggles.
+- `app/model/useSidekickUi.ts` owns local UI state: drawers, popovers, history search, and toasts.
+- `app/model/useSessionRuntime.ts` owns per-session draft, caret, scroll position, expanded blocks, and model/effort/mode, and syncs the active runtime to the host.
 - `app/model/useComposerPalette.ts` owns slash and mention palette detection, file search, and keyboard insertion.
+- `app/model/useAttachments.ts` owns pending attachments per session: picker requests, pasted and dropped files, limit checks, removal, and clearing after send.
 - `app/model/useChatActions.ts` owns send, stop, model, effort, mode, settings, and session actions.
+- `app/model/useSessionTabs.ts` owns tab activation, closing, and the Cmd/Ctrl+1..9 and Cmd/Ctrl+W shortcuts.
 - `app/model/useLocalActions.ts` maps local slash commands to panel actions.
 
 ### `widgets`
@@ -32,6 +35,7 @@ Large self-contained UI blocks. Widgets receive data and callbacks through props
 - `composer`
 - `session-history`
 - `settings-drawer`
+- `turn-diff`
 
 ### `features`
 
@@ -41,6 +45,7 @@ Reusable product actions. Features can read entities and shared code, and expose
 - `effort-picker`
 - `mode-picker`
 - `composer-palette`
+- `attach-menu`
 - `app-menu`
 - `settings`
 
@@ -62,6 +67,76 @@ Framework-level and reusable code with no business dependencies.
 - `lib`: markdown, formatting, and small pure helpers.
 - `types`: shared domain and UI types.
 - `ui`: `Icon`, `Popover`, and low-level controls.
+
+## Workspace folders and sessions
+
+A multi-root workspace keeps one chat per folder. `src/shared/workspace-folders.ts` is the pure model (`pickDirectory`, `tabsOf`, `writeFolderTabs`, `migrateTabs`, `migrateSelection`) and is exercised by `npm run check:folders`, which runs as part of `npm run compile`.
+
+- The active folder lives in `workspaceState` and `src/sidekick-view.ts` routes every directory-scoped request (sessions, models, agents, commands, skills, default model, `findFiles`, prompt attachments, the terminal cwd) through `this.directory`, which returns that folder.
+- Open tabs and the active tab are stored per folder (`opencode.sidekick.tabs.v2`: `{ activeDirectory, folders: { [directory]: { open, active, pinned? } } }`); the v1 shape `{ directory, open, active }` is migrated on read and dropped when its folder left the workspace. Entries of removed folders are kept so re-adding a folder restores its tabs.
+- Pins are ids in the same `FolderTabs` record: `orderTabs` puts them first in pin order, `isPinned`/`setPinned` are pure, and pins of closed tabs are dropped on read. `closeTab` refuses a pinned tab (toast), so the guard also covers `Cmd/Ctrl+W` and middle click; deleting or archiving a session removes its pin with the tab.
+- A tab's context menu is `popover.kind: 'tab'` rendered by `features/tab-menu`; rename is an inline input in the header (empty or unchanged draft posts nothing), delete asks a second time inside the menu and posts `deleteSession` with `confirmed: true`, while the history drawer keeps the native modal.
+- Invariants: `activeDirectory` is always one of the workspace folders, a removed folder falls back to the first remaining one, and with no folders at all the host uses the home directory and the header hides the folder picker.
+- The header picker (`folders.length > 1`) sends `selectFolder`; the host persists the old folder, reloads sessions and the directory-scoped catalogs, restores that folder's tabs and posts a snapshot. Any in-flight response for a folder that is no longer active is dropped instead of being merged.
+- The active editor steers the folder only until the user picks one by hand and while no turn is running in the current folder. Background stream events are routed by session id across `allTabIDs()`, so another folder's tab gets its unread and stale flags without repainting the visible chat.
+- A new chat is a per-folder draft: the webview keys it as `__new__:<directory>` and carries it into the created session.
+
+## Transcript pagination and windowing
+
+Long sessions are loaded as cursor pages instead of the whole history, so opening a 2000-message chat costs one request and a constant number of DOM nodes.
+
+- `src/opencode-client.ts` wraps `GET /api/session/{id}/message` with `listMessages(sessionID, { limit, order, cursor })` and returns `{ messages, cursor: { previous, next } }`.
+- `src/message-pages.ts` is the host-side pure layer: `MESSAGE_PAGE_SIZE` / `MESSAGE_TAIL_SIZE`, `toAscending` for `order=desc` pages, `prependMessages` for older pages, and `mergeTail` to update the newest messages by id without dropping already loaded history.
+- `src/sidekick-view.ts` keeps the cursors (`previousCursor`, `nextCursor`, `hasMoreOlder`, `loadingOlder`) for the active session only and resets them on every session switch, so a tab never reuses another tab's cursor. Structural events (`session.execution.*`, tool and step lifecycle) call `refreshTail` (30 newest messages merged by id) instead of reloading the transcript. A full `loadMessages` is kept for open/activate/new/delete/send/manual refresh.
+- The snapshot exposes `history: { hasMoreOlder, loadingOlder }`, and the webview asks for the previous page with `{ type: 'loadOlder' }`.
+- `widgets/conversation/lib/thread-window.ts` holds the pure windowing math: prefix-sum offsets (measured height plus thread gap per message, `THREAD_ESTIMATE` until measured), binary-search `visibleRange` with an 8-message overscan, and `rangePads` that turn the window into top and bottom padding.
+- `widgets/conversation/lib/useThreadWindow.ts` measures rendered items (`[data-thread-id]`, `offsetHeight` plus margin) in a layout effect, keeps the estimate as the average of measured items, and recomputes the window from a rAF-throttled scroll listener. Chats up to `THREAD_WINDOW_THRESHOLD` (60) messages render in full.
+- `Conversation` compensates the scroll position after a prepend by re-reading the anchor item's `offsetTop`, and restores a tab from `SessionRuntimeState.distanceFromBottom` (loading up to 5 older pages), because an absolute `scrollTop` no longer refers to the full history.
+
+## Turn diff review
+
+A finished turn leaves a footer card with its totals. `src/shared/turn-diff.ts` is the pure model (`summarizeTurnDiff`, `turnRefs`, `parsePatch`, `resolveDiffPath`) shared by the host, the card and the panel; patches are fetched only by the singleton panel, never stored in the chat snapshot. The panel asks for one turn with `from` alone (a `to` bound would extend the range to the next turn), renders at most `PATCH_LINE_LIMIT` lines per file with a truncation note, and caps the whole response at `DIFF_MAX_BYTES`.
+
+## Permissions
+
+`src/shared/permission.ts` is the pure model shared by the host, the card and the settings list: `readPermissionRequest` drops `metadata` (it can carry file patches and command output), `permissionRisk` / `permissionSummary` follow the terminal wording, and `upsertPermission` / `removePermission` / `filterResolved` keep the pending list by id. `npm run check:permissions` covers the client calls and these functions and runs as part of `npm run compile`.
+
+- `src/opencode-client.ts` wraps `GET /api/session/{id}/permission`, `POST …/permission/{requestID}/reply`, `GET /api/permission/saved` and `DELETE /api/permission/saved/{id}`; a 404 reply is an `OpenCodeHttpError` with status 404, which the host reports as an expired request.
+- The host keeps `permissions` per session, `permissionSending` per request and a bounded FIFO of answered ids, so a stale list or a replayed `permission.asked` frame cannot resurrect a card. `permission.asked` / `permission.replied` are routed before the active-session gate; the list is reloaded on connect, tab activation, stream reconnect, session open and the end of a turn.
+- The card is pinned above the revert card (`features/permission-card`, `.permission-foot`). `Allow once` and `Reject` are always available, `Always allow` only when the request carries `save` patterns, and `Reject` is a second step with an optional reason. Nothing is removed optimistically: the reply is awaited, a failure keeps the card, and a 404 or a `permission.replied` frame removes it.
+- Auto-approve is off by default and answers `once` only for a `tool` source whose action is exactly one of `read`, `glob`, `grep`, `list`, `find`; it never creates a saved rule and never applies to a request already on screen.
+- Settings gains a Permissions section: the auto-approve switch and the saved rules of the active session's `projectID`, with delete only. Hidden tabs show a pending count in the header.
+
+## Queued messages
+
+A message sent while a turn runs waits in the server's durable session inbox instead of blocking the composer. `src/shared/inbox.ts` is the pure model shared by the host and the queue strip: `parseQueueItem` drops `payload` and keeps only the text a row shows, `withDelivery` / `withoutItem` / `upsertQueueItem` mirror the stream frames, and `queueSummary` caps the strip at 50 rows with a `+N more` line. `npm run check:inbox-api` covers the client calls and these functions and runs as part of `npm run compile`.
+
+- `src/opencode-client.ts` wraps `GET /api/session/{id}/inbox`, `PATCH …/inbox/{inboxID}` with exactly `{ delivery }` and `DELETE …/inbox/{inboxID}`; `prompt` adds `delivery` only when the caller asks for it, so an idle send keeps its old body.
+- The host keeps `queues` per session, a read epoch per session and the ids with an action in flight. The server list is the source of truth: `session.inbox.enqueued` / `delivered` / `cancelled` / `delivery.changed` move the mirror, an unknown payload falls back to a re-read, and a stale read is dropped by its epoch and the visible session.
+- The list is reloaded on connect, tab activation, stream reconnect, session open, the start and end of a turn and after a send. A queued send does not touch `busy` or the turn baseline, so the running turn keeps its diff boundary.
+- The strip (`widgets/composer`, `.queue-strip`) sits above the composer and offers **Send now** (`PATCH delivery: steer`), **Edit** (cancel, then the text returns to the composer) and **Delete**; the composer chip reads `N in queue`. A 404 or 409 means the item was delivered: the list is re-read and the row disappears without an error.
+- `opencodeSidekick.queueDelivery` chooses `queue` (default) or `steer` for a busy send. A staged or pending revert keeps priority over the queue: `Undo` refuses to stage while rows are waiting and steering is blocked while a revert is staged.
+
+## Editor context
+
+Right-clicking a file or an editor tab adds the file, the selection or the Problems of the clicked file to the composer. `src/shared/editor-context.ts` is the pure model (`selectionRange`, `contextToken`, `composeContextText`, `problemsDigest`, `fileUriWithRange`, `inlineTextUri`, `parseContextRef`, `dedupeRefs`) and is exercised by `npm run check:editor-context`, which runs as part of `npm run compile`.
+
+- A selection travels as the source `file://` URI with `?start&end` when the server would slice it (`text/plain`); other languages and virtual documents travel as a `data:text/plain;base64` URI with exactly the selected text. The chip keeps its `ContextRef`, and `composePrompt` appends the `@path:start-end` token once and gives the chip its mention range, so the agent sees the file, the range and exactly those lines.
+- Problems attach the clicked file only, as one chip with the diagnostic count and no mention; the body is a temp text file capped at 200 lines with a `+N more` tail.
+- `opencodeSidekick.autoAttachActiveFile` (off by default) offers one automatic chip per chat: `syncAutoContext` runs on editor change, config change, `ready` and `activateTab`, never buffers while the panel is closed, and never duplicates a manual chip of the same file. Removing the automatic chip posts `autoContextDismiss`, so it stays gone until the active editor moves.
+
+## Editor tab
+
+The chat can be opened as one editor tab beside the code (`opencode.sidekick.chat`), from the palette (`OpenCode: Open Chat in Editor Tab`) or a tab's context menu (`openInEditor`). Both surfaces render the same `this.session` and share one stream, so a message sent in the tab shows up in the sidebar and the other way round.
+
+- `src/shared/chat-surface.ts` is the pure surface registry (`add`, `remove`, `markReady`, `markActive`, `ready`, `hasReady`, `active`); `active()` is the last surface the user touched, else the sidebar, else the first ready one, and never a surface whose webview is still booting. `npm run check:chat-surfaces` covers it.
+- `src/chat-panel.ts` owns the singleton panel with injected `createPanel`/`html`/`onMessage`/`onReady`/`onDispose`, so it loads in a plain node process for `npm run check:chat-panel`. `show()` reveals the existing tab instead of creating a second one, and the newest `state` that arrives before the webview says `ready` is replayed once.
+- `src/shared/chat-surface.ts` also owns the frame routing table (`frameScope`): shared state and chrome frames (`state`, `messages`, `busy`, `error`, `delta`, `autoContext`, `attachmentRemoved`, `openHistory`, `openSettings`, `closeHistory`) are broadcast to every ready surface, `focus` and `toast` go only to `active()`, and request-scoped frames (`attached` with a `requestId`, `attachError`, `attachDone`, `sendRejected`, `files`, a `sessions` search answer, `queueEdit`) go back to the surface that asked. `post()` applies the table, so a UI-only frame cannot land in a surface the user is not looking at and a reply cannot leak into another surface. `npm run check:chat-surfaces` covers the table.
+- A host-initiated attachment is added to every surface with the same id, so removing a chip deletes the file and broadcasts `attachmentRemoved` with that id; `useAttachments` drops the chip from every tray, and the other surface no longer sends a dead `file://` URI.
+- `previewUri` is no longer baked into an attachment: `withPreview(attachment, webview)` mints it per webview, so two surfaces can show the same image and a buffered attachment gets its URI only when a webview exists.
+- The editor tab is as wide as the code beside it, so `body[data-surface='editor']` caps `.thread` and `.composer` at 980px and centers them; the sidebar keeps its full-width layout.
+- `handle('ready')` never reconnects an established stream: when `this.client` is already set, a new surface only receives the snapshot and the buffered attachments, which is what makes the second surface cheap.
+- The tab title is the session title and its icon is `resources/chat-{running,attention,idle}.svg`: running wins over a pending permission or a connection error, and idle is the fallback. The panel keeps `{ sessionID, directory }` in `PANEL_KEY`; the serializer (`onWebviewPanel:opencode.sidekick.chat`) restores the tab on that session, and closing the tab clears the key without touching the tabs or the session.
 
 ## Import policy
 

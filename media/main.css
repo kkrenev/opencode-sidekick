@@ -155,9 +155,8 @@ select:focus-visible {
 .brand {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-width: 0;
-  flex: 1;
+  gap: 7px;
+  flex: none;
 }
 
 .mark {
@@ -175,33 +174,199 @@ select:focus-visible {
   height: 21px;
 }
 
-.session-pill {
+.tab-strip {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.tab-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.tab-empty {
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.session-tab {
   display: flex;
   align-items: center;
   gap: 5px;
-  min-width: 0;
-  padding: 4px 7px;
-  border-radius: 8px;
+  min-width: 96px;
+  max-width: 168px;
+  height: 28px;
+  padding: 0 4px 0 9px;
+  border-radius: 7px;
   color: var(--muted);
-  transition: background 120ms ease, color 120ms ease;
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: background 120ms ease, color 120ms ease, box-shadow 120ms ease;
 }
 
-.session-pill:hover {
+.session-tab:hover {
   background: var(--surface-2);
   color: var(--vscode-foreground);
 }
 
-.session-pill .label {
+.session-tab.active {
+  background: color-mix(in srgb, var(--accent) 13%, var(--surface-2));
+  color: var(--vscode-foreground);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 26%, transparent);
+}
+
+.session-tab:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.session-tab.missing {
+  color: var(--vscode-editorWarning-foreground, #d7a44a);
+}
+
+.session-tab.stale {
+  opacity: 0.6;
+}
+
+.session-tab .tab-title {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
 }
 
-.session-pill .icon {
+.session-tab .tab-live {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+  animation: tab-pulse 1.4s ease-in-out infinite;
+  flex: 0 0 auto;
+}
+
+.session-tab .tab-unread {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-left: 6px;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+  animation: tab-unread-pop 220ms ease-out;
+  flex: 0 0 auto;
+}
+
+.session-tab .tab-alert {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+
+/* Hidden tab waiting for an answer: the number is the pending request count. */
+.session-tab .tab-perm {
+  display: inline-grid;
+  place-items: center;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #d7a63c) 26%, transparent);
+  color: var(--vscode-editorWarning-foreground, #d7a63c);
+  font-size: 9px;
+  font-weight: 650;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.session-tab .tab-close {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  color: inherit;
+  opacity: 0;
+  flex: none;
+  transition: background 120ms ease, opacity 120ms ease;
+}
+
+.session-tab:hover .tab-close,
+.session-tab.active .tab-close,
+.session-tab.missing .tab-close,
+.session-tab .tab-close:focus-visible {
+  opacity: 0.72;
+}
+
+.session-tab .tab-close:hover {
+  background: color-mix(in srgb, var(--vscode-foreground) 14%, transparent);
+  opacity: 1;
+}
+
+.session-tab .tab-close .icon {
+  width: 10px;
+  height: 10px;
+}
+
+.session-tab .tab-pin {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  color: color-mix(in srgb, var(--accent) 80%, var(--vscode-foreground));
+  opacity: 0.85;
+}
+
+.session-tab .tab-pin .icon {
   width: 11px;
   height: 11px;
-  opacity: 0.6;
+}
+
+.session-tab.pinned .tab-title {
+  color: var(--vscode-foreground);
+}
+
+.session-tab .tab-rename {
+  min-width: 60px;
+  flex: 1;
+  height: 20px;
+  padding: 0 4px;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  background: var(--surface);
+  color: var(--vscode-input-foreground, var(--vscode-foreground));
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+@keyframes tab-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes tab-unread-pop {
+  from {
+    transform: scale(0.2);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 .connection-dot {
@@ -211,6 +376,38 @@ select:focus-visible {
   background: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
   flex: none;
+}
+
+.folder-picker {
+  max-width: 104px;
+  height: 24px;
+  padding: 0 18px 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.folder-picker:hover {
+  color: var(--vscode-foreground);
+  border-color: var(--line-strong);
+}
+
+.folder-picker:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+  color: var(--vscode-foreground);
+}
+
+.folder-picker option {
+  background: var(--vscode-dropdown-background, var(--vscode-sideBar-background));
+  color: var(--vscode-dropdown-foreground, var(--vscode-foreground));
 }
 
 .top-actions {
@@ -246,12 +443,22 @@ select:focus-visible {
 
 /* Transcript */
 
+.conversation {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
 .scroll {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
   overflow-x: hidden;
+  overflow-anchor: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--line-strong) transparent;
 }
@@ -270,20 +477,118 @@ select:focus-visible {
 }
 
 .thread {
+  position: relative;
   display: flex;
   flex-direction: column;
-  flex: 1 1 auto;
+  flex: 1 0 auto;
   min-height: 0;
-  gap: var(--thread-gap);
-  padding: var(--thread-pad) 12px 24px;
+  padding-top: max(0px, calc(var(--thread-pad) - var(--thread-gap)));
+  padding-right: 12px;
+  padding-bottom: 24px;
+  padding-left: 12px;
+}
+
+.thread > .thread-item,
+.thread > .working {
+  margin-top: var(--thread-gap);
+}
+
+.thread-item {
+  min-width: 0;
+}
+
+.thread.virtual .thread-item > .msg {
+  animation: none;
+}
+
+.thread:not(.virtual) .thread-item:last-child > .msg {
+  animation: rise 180ms ease both;
+}
+
+.jump-latest {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 5;
+  max-width: calc(100% - 28px);
+  padding: 6px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--vscode-sideBar-background) 86%, transparent);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
+  color: var(--vscode-foreground);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 120ms ease, transform 120ms ease;
+}
+
+.jump-latest:hover {
+  background: var(--surface-3);
+}
+
+.jump-latest:active {
+  transform: scale(0.97);
 }
 
 .msg {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 7px;
   min-width: 0;
   animation: rise 180ms ease both;
+}
+
+/* Copy on hover: visible on the message, never in the way of the text. */
+.msg-copy {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--vscode-sideBar-background) 88%, transparent);
+  color: var(--dim);
+  opacity: 0;
+  pointer-events: none;
+  user-select: none;
+  transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
+}
+
+.msg:hover .msg-copy,
+.msg-copy:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* The button sits on the meta line, so the timestamp keeps clear of it. */
+.msg.assistant.has-copy .meta {
+  padding-right: 26px;
+}
+
+.msg-copy:hover {
+  background: var(--surface-2);
+  color: var(--vscode-foreground);
+}
+
+.msg-copy .icon {
+  width: 12px;
+  height: 12px;
+}
+
+/* The user bubble hugs the right edge, so its button goes to the free side. */
+.msg.user .msg-copy {
+  right: auto;
+  left: 0;
+  top: 2px;
 }
 
 @keyframes rise {
@@ -529,6 +834,7 @@ select:focus-visible {
   width: 100%;
   padding: 7px 9px;
   text-align: left;
+  cursor: pointer;
   transition: background 120ms ease;
 }
 
@@ -566,6 +872,34 @@ select:focus-visible {
   font-family: var(--mono);
   font-size: 11px;
   color: var(--dim);
+}
+
+.tool-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  flex: none;
+}
+
+/* The head toggles the card; a title that names a file opens it instead. */
+.tool-title-open {
+  text-align: left;
+  cursor: pointer;
+}
+
+.tool-title-open:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+/* Tool files stay visible while the card is collapsed: a preview nobody sees
+   answers nothing. */
+.tool-files {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 9px 8px;
 }
 
 .tool-state {
@@ -630,6 +964,122 @@ select:focus-visible {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   color: var(--muted);
+}
+
+/* Transcript attachments */
+
+.msg-attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-self: flex-end;
+  width: 100%;
+  max-width: 92%;
+  min-width: 0;
+}
+
+.part-image {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.part-image-button {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  overflow: hidden;
+  cursor: zoom-in;
+  transition: border-color 120ms ease;
+}
+
+.part-image-button:hover {
+  border-color: var(--line-strong);
+}
+
+/* A screenshot never widens the thread: it fits the column and stops at 320px. */
+.part-image img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  max-height: 320px;
+  object-fit: contain;
+}
+
+.part-image-pending {
+  display: block;
+  height: 96px;
+  background: var(--surface-2);
+}
+
+.file-chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--vscode-input-background, #000) 20%, transparent);
+}
+
+.file-chip-glyph {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.file-chip-glyph .icon {
+  width: 13px;
+  height: 13px;
+}
+
+.file-chip-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.file-chip-name {
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-chip-path {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-chip-open {
+  flex: none;
+  padding: 3px 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  font-size: 10.5px;
+  color: var(--dim);
+  background: var(--surface-2);
+}
+
+.file-chip-open:hover {
+  border-color: var(--accent);
+  color: var(--vscode-foreground);
 }
 
 .working {
@@ -785,6 +1235,7 @@ select:focus-visible {
 }
 
 .composer {
+  position: relative;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   background:
@@ -822,6 +1273,167 @@ select:focus-visible {
 
 .composer textarea::placeholder {
   color: var(--dim);
+}
+
+/* Large paste: the text is already in the draft, the banner only offers a file. */
+.composer-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 8px 0;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.composer-banner-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.composer-banner-actions {
+  display: flex;
+  flex: none;
+  gap: 4px;
+}
+
+.banner-btn {
+  padding: 2px 7px;
+  border-radius: 6px;
+  border: 1px solid var(--line-strong);
+  color: var(--muted);
+  font-size: 10px;
+  white-space: nowrap;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.banner-btn:hover {
+  background: var(--surface-3);
+  color: var(--vscode-foreground);
+}
+
+.composer.dragging {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 32%, transparent);
+}
+
+.composer.dragging::after {
+  content: 'Drop files to attach';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--vscode-sideBar-background) 84%, transparent);
+  color: var(--accent);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+
+.attach-tray {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 6px 8px 2px;
+  border-top: 1px solid var(--line);
+  max-height: 156px;
+  overflow-y: auto;
+}
+
+.attach-chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--vscode-input-background, #000) 20%, transparent);
+}
+
+/* The automatic chip follows the active editor; a dashed border marks it as such. */
+.attach-chip[data-auto='true'] {
+  border-style: dashed;
+}
+
+.attach-thumb {
+  display: block;
+  width: 64px;
+  height: 64px;
+  flex: none;
+  border-radius: 6px;
+  object-fit: cover;
+  background: var(--surface-2);
+}
+
+.attach-glyph {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.attach-glyph .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.attach-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.attach-name {
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--vscode-foreground);
+}
+
+.attach-size {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9.5px;
+  color: var(--dim);
+}
+
+.attach-remove {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border-radius: 6px;
+  color: var(--dim);
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.attach-remove:hover {
+  background: var(--surface-2);
+  color: var(--vscode-foreground);
+}
+
+.attach-remove .icon {
+  width: 10px;
+  height: 10px;
 }
 
 .composer-foot {
@@ -862,6 +1474,29 @@ select:focus-visible {
 .chip .icon {
   width: 11px;
   height: 11px;
+}
+
+.attach-btn {
+  padding: 3px 5px;
+}
+
+.attach-btn .icon {
+  width: 12px;
+  height: 12px;
+}
+
+.attach-btn[disabled] {
+  opacity: 0.38;
+  cursor: default;
+}
+
+.attach-btn[disabled]:hover {
+  background: transparent;
+  color: var(--dim);
+}
+
+.attach-popover {
+  max-width: calc(100vw - 16px);
 }
 
 .grow {
@@ -929,6 +1564,648 @@ select:focus-visible {
 
 .working-status {
   color: var(--accent);
+}
+
+/* Context usage chip in the composer foot. */
+.context-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  min-width: 0;
+  padding: 3px 6px;
+  border-radius: 7px;
+  color: var(--dim);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+}
+
+.context-meter-bar {
+  display: block;
+  width: 26px;
+  height: 3px;
+  flex: none;
+  border-radius: 2px;
+  background: var(--line-strong);
+  overflow: hidden;
+}
+
+.context-meter-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 200ms ease;
+}
+
+.context-meter.level-warn {
+  color: var(--vscode-editorWarning-foreground, #d7a63c);
+}
+
+.context-meter.level-warn .context-meter-bar > span {
+  background: var(--vscode-editorWarning-foreground, #d7a63c);
+}
+
+.context-meter.level-compact {
+  color: var(--vscode-errorForeground, #e5534b);
+}
+
+.context-meter.level-compact .context-meter-bar > span {
+  background: var(--vscode-errorForeground, #e5534b);
+}
+
+.context-meter.compacting .context-meter-text {
+  color: var(--accent);
+}
+
+.compact-btn {
+  flex: none;
+}
+
+.compact-btn[disabled] {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.compact-btn[disabled]:hover {
+  background: transparent;
+  color: var(--muted);
+}
+
+@media (max-width: 430px) {
+  .context-meter-bar {
+    display: none;
+  }
+}
+
+/* A diff card after the last finished turn: totals, Review and Undo. */
+.turn-diff {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0 2px;
+  padding: 6px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.turn-diff-text {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 7px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.turn-diff-add {
+  color: var(--vscode-gitDecoration-addedResourceForeground, #3ddc97);
+}
+
+.turn-diff-sep {
+  color: var(--dim);
+}
+
+.turn-diff-del {
+  color: var(--vscode-gitDecoration-deletedResourceForeground, #e5534b);
+}
+
+.turn-diff-review {
+  flex: none;
+  padding: 3px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
+.turn-diff-review:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.turn-diff-undo {
+  flex: none;
+  padding: 3px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
+.turn-diff-undo:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.turn-diff-undo[disabled] {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.turn-diff-undo[disabled]:hover {
+  border-color: var(--line-strong);
+  color: var(--muted);
+}
+
+/* Server inbox above the composer: rows wait for the current turn. */
+.queue-strip {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 30vh;
+  padding: 8px 12px 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.queue-strip-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dim);
+  font-size: 10.5px;
+}
+
+.queue-strip-title {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.queue-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.queue-kind {
+  flex: none;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  color: var(--dim);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.queue-kind.steering,
+.queue-kind.compaction {
+  color: color-mix(in srgb, var(--accent) 78%, var(--muted));
+}
+
+.queue-text {
+  flex: 1;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.queue-time {
+  flex: none;
+  color: var(--dim);
+  font-size: 9.5px;
+}
+
+.queue-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.queue-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  color: var(--dim);
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.queue-btn:hover {
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.queue-btn[disabled] {
+  opacity: 0.38;
+  cursor: default;
+}
+
+.queue-btn .icon {
+  width: 11px;
+  height: 11px;
+}
+
+.queue-more {
+  color: var(--dim);
+  font-size: 10px;
+}
+
+/* Pending permissions: pinned above the revert card and the composer. */
+.permission-foot {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 40vh;
+  padding: 0 12px 8px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.permission-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid
+    color-mix(in srgb, var(--vscode-editorWarning-foreground, #d7a63c) 46%, var(--line-strong));
+  border-radius: 8px;
+  background: color-mix(
+    in srgb,
+    var(--vscode-editorWarning-foreground, #d7a63c) 6%,
+    var(--surface)
+  );
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.permission-card.reject {
+  border-color: color-mix(in srgb, var(--vscode-errorForeground, #e5534b) 46%, var(--line-strong));
+  background: color-mix(in srgb, var(--vscode-errorForeground, #e5534b) 6%, var(--surface));
+}
+
+.permission-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.permission-title {
+  flex: 0 0 auto;
+  color: var(--vscode-foreground);
+  font-weight: 600;
+}
+
+.permission-risk {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--dim);
+  font-size: 9.5px;
+  white-space: nowrap;
+}
+
+.permission-risk.shell,
+.permission-risk.write,
+.permission-risk.external {
+  border-color: color-mix(in srgb, var(--vscode-editorWarning-foreground, #d7a63c) 45%, var(--line-strong));
+  color: var(--vscode-editorWarning-foreground, #d7a63c);
+}
+
+.permission-summary {
+  color: var(--vscode-foreground);
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.permission-detail {
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--vscode-foreground) 5%, transparent);
+  color: var(--vscode-foreground);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 96px;
+  overflow-y: auto;
+}
+
+.permission-resources {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 96px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  scrollbar-width: thin;
+}
+
+.permission-resource {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+
+.permission-resource-more {
+  color: var(--dim);
+}
+
+.permission-message {
+  color: var(--muted);
+  font-size: 10.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 96px;
+  overflow-y: auto;
+}
+
+.permission-reason {
+  min-height: 40px;
+  padding: 5px 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--vscode-input-foreground, var(--vscode-foreground));
+  font-family: inherit;
+  font-size: 11px;
+  resize: vertical;
+  outline: none;
+}
+
+.permission-reason:focus {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.permission-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.permission-actions button {
+  padding: 3px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
+.permission-actions button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.permission-actions .permission-primary {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line-strong));
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--vscode-foreground);
+}
+
+.permission-actions .permission-primary:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.permission-actions button[disabled] {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.permission-actions button[disabled]:hover {
+  border-color: var(--line-strong);
+  color: var(--muted);
+}
+
+.permission-sending {
+  color: var(--dim);
+  font-size: 10px;
+}
+
+/* Staged revert: the files already went back, so the card only confirms them. */
+.revert-foot {
+  flex: none;
+  padding: 0 12px 8px;
+}
+
+.revert-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line-strong));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.revert-card-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.revert-card-title {
+  flex: none;
+  color: var(--vscode-foreground);
+  font-weight: 600;
+}
+
+.revert-files {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 148px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  scrollbar-width: thin;
+}
+
+.revert-file {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  padding: 1px 0;
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+
+.revert-file-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+
+.revert-file-stat {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
+.revert-file-more {
+  color: var(--dim);
+}
+
+.revert-card-hint {
+  color: var(--dim);
+  font-size: 10.5px;
+}
+
+.revert-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.revert-card-actions button,
+.revert-confirm-actions button {
+  padding: 3px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
+.revert-card-actions button:hover,
+.revert-confirm-actions button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.revert-card-actions .revert-card-keep,
+.revert-confirm-actions .revert-confirm-primary {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line-strong));
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--vscode-foreground);
+}
+
+.revert-card-actions .revert-card-keep:hover,
+.revert-confirm-actions .revert-confirm-primary:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.revert-card-actions button[disabled] {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.revert-card-actions button[disabled]:hover {
+  border-color: var(--line-strong);
+  color: var(--muted);
+}
+
+/* Confirmation before the stage: nothing on disk changes until this button. */
+.revert-confirm-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 19;
+  background: color-mix(in srgb, #000 34%, transparent);
+}
+
+.revert-confirm {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  left: 10px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 11px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--vscode-sideBar-background) 98%, #000),
+      color-mix(in srgb, var(--vscode-sideBar-background) 94%, #000)
+    );
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.42);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.revert-confirm-head {
+  color: var(--vscode-foreground);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.revert-confirm-sub {
+  color: var(--muted);
+}
+
+.revert-confirm-warn {
+  color: var(--vscode-editorWarning-foreground, #d7a63c);
+  font-size: 10.5px;
+}
+
+.revert-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* A kept revert leaves a plaque where the turn used to be. */
+.thread-notice.revert {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--line-strong));
+  color: var(--vscode-foreground);
+}
+
+/* Auto-approved request: a plaque instead of a card that never appears. */
+.thread-notice.permission {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--line-strong));
+}
+
+/* A system plaque after the transcript; it never joins `messages`. */
+.thread-notice {
+  margin: 8px 0 2px;
+  padding: 5px 9px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 10.5px;
+  text-align: center;
 }
 
 /* Popovers */
@@ -1034,6 +2311,15 @@ select:focus-visible {
   background: var(--surface-2);
 }
 
+.row:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+.row:disabled:hover {
+  background: transparent;
+}
+
 .row.active {
   background: color-mix(in srgb, var(--accent) 11%, transparent);
 }
@@ -1113,6 +2399,61 @@ select:focus-visible {
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--dim);
+}
+
+/* Tab context menu */
+
+.tab-menu {
+  width: 268px;
+  max-width: calc(100vw - 16px);
+}
+
+.tab-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--vscode-errorForeground, #e5534b) 8%, var(--surface-2));
+}
+
+.tab-confirm-text {
+  flex: 1 1 100%;
+  min-width: 0;
+  font-size: 11.5px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  color: var(--vscode-foreground);
+}
+
+.tab-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.tab-confirm-btn {
+  padding: 3px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  font-size: 11.5px;
+  color: var(--vscode-foreground);
+  transition: background 120ms ease;
+}
+
+.tab-confirm-btn:hover {
+  background: var(--surface-2);
+}
+
+.tab-confirm-btn.danger {
+  border-color: color-mix(in srgb, var(--vscode-errorForeground, #e5534b) 45%, transparent);
+  color: var(--vscode-errorForeground, #e5534b);
+}
+
+.tab-confirm-btn.danger:hover {
+  background: color-mix(in srgb, var(--vscode-errorForeground, #e5534b) 14%, transparent);
 }
 
 /* History drawer */
@@ -1421,6 +2762,81 @@ select:focus-visible {
   background: var(--accent);
 }
 
+/* Saved "Always allow" rules: one line per rule, delete only. */
+.saved-permissions {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 4px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+}
+
+.saved-permissions-head {
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.saved-permissions-error {
+  color: var(--vscode-errorForeground, #e5534b);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.saved-permissions-hint {
+  color: var(--dim);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.saved-permissions-empty {
+  color: var(--dim);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.saved-permissions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 190px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  scrollbar-width: thin;
+}
+
+.saved-permission {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 2px 0;
+}
+
+.saved-permission-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.saved-permission-sep {
+  color: var(--dim);
+}
+
+.saved-permission .icon-btn {
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+
 .swatches {
   display: flex;
   gap: 6px;
@@ -1506,6 +2922,99 @@ select:focus-visible {
   animation: rise 140ms ease both;
 }
 
+/* Image lightbox */
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 14px;
+}
+
+.lightbox-backdrop {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--vscode-editor-background, #000) 82%, transparent);
+}
+
+.lightbox-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.lightbox-image {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100vh - 90px);
+  object-fit: contain;
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.lightbox-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: var(--vscode-sideBar-background);
+}
+
+.lightbox-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.lightbox-open {
+  flex: none;
+  padding: 3px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  font-size: 10.5px;
+  color: var(--dim);
+  background: var(--surface-2);
+}
+
+.lightbox-open:hover {
+  border-color: var(--accent);
+  color: var(--vscode-foreground);
+}
+
+.lightbox-close {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 6px;
+  color: var(--dim);
+}
+
+.lightbox-close:hover {
+  background: var(--surface-2);
+  color: var(--vscode-foreground);
+}
+
+.lightbox-close .icon {
+  width: 12px;
+  height: 12px;
+}
+
 /* Compact density tweaks */
 
 body[data-density='compact'] .composer textarea {
@@ -1524,4 +3033,15 @@ body[data-density='compact'] .tool-head {
 body[data-density='compact'] .settings-section {
   margin-bottom: 12px;
   padding: 10px;
+}
+
+/* Editor tab */
+
+/* The editor tab is as wide as the code beside it, so the chat keeps a
+   readable column instead of stretching a sidebar layout across the screen. */
+body[data-surface='editor'] .thread,
+body[data-surface='editor'] .composer {
+  max-width: 980px;
+  margin-right: auto;
+  margin-left: auto;
 }

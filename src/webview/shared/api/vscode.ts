@@ -12,10 +12,10 @@ export function post(message: Record<string, unknown>): void {
   vscode.postMessage(message);
 }
 
-export function subscribeToHost(
-  handler: (message: IncomingMessage) => void,
+export function subscribeToHost<T = IncomingMessage>(
+  handler: (message: T) => void,
 ): () => void {
-  const listener = (event: MessageEvent<IncomingMessage>) => handler(event.data);
+  const listener = (event: MessageEvent<T>) => handler(event.data);
   window.addEventListener('message', listener);
   return () => window.removeEventListener('message', listener);
 }

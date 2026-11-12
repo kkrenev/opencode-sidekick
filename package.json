@@ -37,7 +37,8 @@
     }
   },
   "activationEvents": [
-    "onView:opencode.sidekick"
+    "onView:opencode.sidekick",
+    "onWebviewPanel:opencode.sidekick.chat"
   ],
   "contributes": {
     "viewsContainers": {
@@ -64,6 +65,12 @@
         "command": "opencode.sidekick.focus",
         "title": "Focus OpenCode Sidekick",
         "category": "OpenCode"
+      },
+      {
+        "command": "opencode.sidekick.openChatInEditor",
+        "title": "Open Chat in Editor Tab",
+        "category": "OpenCode",
+        "icon": "$(link-external)"
       },
       {
         "command": "opencode.sidekick.newSession",
@@ -100,6 +107,41 @@
         "title": "Open OpenCode in Integrated Terminal",
         "category": "OpenCode",
         "icon": "$(terminal)"
+      },
+      {
+        "command": "opencode.sidekick.attachScreenshot",
+        "title": "Attach Screenshot",
+        "category": "OpenCode"
+      },
+      {
+        "command": "opencode.sidekick.attachSelection",
+        "title": "Add Selection to Chat",
+        "category": "OpenCode"
+      },
+      {
+        "command": "opencode.sidekick.addFileToChat",
+        "title": "Add File to Chat",
+        "category": "OpenCode"
+      },
+      {
+        "command": "opencode.sidekick.addProblemsToChat",
+        "title": "Add Problems to Chat",
+        "category": "OpenCode"
+      },
+      {
+        "command": "opencode.sidekick.copyLastAnswer",
+        "title": "Copy Last Answer",
+        "category": "OpenCode"
+      },
+      {
+        "command": "opencode.sidekick.copyTranscript",
+        "title": "Copy Conversation as Markdown",
+        "category": "OpenCode"
+      },
+      {
+        "command": "opencode.sidekick.copySelection",
+        "title": "Copy Selection with Reference",
+        "category": "OpenCode"
       }
     ],
     "menus": {
@@ -125,9 +167,41 @@
           "group": "navigation@4"
         }
       ],
+      "editor/context": [
+        {
+          "command": "opencode.sidekick.addFileToChat",
+          "group": "opencode@1"
+        },
+        {
+          "command": "opencode.sidekick.attachSelection",
+          "when": "editorHasSelection",
+          "group": "opencode@2"
+        },
+        {
+          "command": "opencode.sidekick.addProblemsToChat",
+          "group": "opencode@3"
+        }
+      ],
+      "editor/title/context": [
+        {
+          "command": "opencode.sidekick.addFileToChat",
+          "group": "opencode@1"
+        },
+        {
+          "command": "opencode.sidekick.attachSelection",
+          "group": "opencode@2"
+        },
+        {
+          "command": "opencode.sidekick.addProblemsToChat",
+          "group": "opencode@3"
+        }
+      ],
       "commandPalette": [
         {
           "command": "opencode.sidekick.focus"
+        },
+        {
+          "command": "opencode.sidekick.openChatInEditor"
         },
         {
           "command": "opencode.sidekick.newSession"
@@ -146,6 +220,27 @@
         },
         {
           "command": "opencode.sidekick.openTerminal"
+        },
+        {
+          "command": "opencode.sidekick.attachScreenshot"
+        },
+        {
+          "command": "opencode.sidekick.attachSelection"
+        },
+        {
+          "command": "opencode.sidekick.addFileToChat"
+        },
+        {
+          "command": "opencode.sidekick.addProblemsToChat"
+        },
+        {
+          "command": "opencode.sidekick.copyLastAnswer"
+        },
+        {
+          "command": "opencode.sidekick.copyTranscript"
+        },
+        {
+          "command": "opencode.sidekick.copySelection"
         }
       ]
     },
@@ -261,18 +356,70 @@
           "type": "boolean",
           "default": true,
           "description": "Start the OpenCode background server automatically when the sidebar opens and no server is running."
+        },
+        "opencodeSidekick.contextWarnPercent": {
+          "type": "number",
+          "default": 80,
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Context usage percentage that shows the Compact warning in the composer."
+        },
+        "opencodeSidekick.contextCompactPercent": {
+          "type": "number",
+          "default": 95,
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Context usage percentage that triggers an automatic compaction of the active session."
+        },
+        "opencodeSidekick.permissionsAutoApproveSafe": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Answer read-only tool requests (`read`, `glob`, `grep`, `list`, `find`) without showing a permission card. Shell commands, file edits, network access and external directories always ask."
+        },
+        "opencodeSidekick.queueDelivery": {
+          "type": "string",
+          "enum": [
+            "queue",
+            "steer"
+          ],
+          "enumDescriptions": [
+            "Wait in the queue and run in order after the current turn.",
+            "Join the running turn at its next step boundary."
+          ],
+          "default": "queue",
+          "description": "What happens to a message you send while the agent is working."
+        },
+        "opencodeSidekick.autoAttachActiveFile": {
+          "type": "boolean",
+          "default": false,
+          "description": "Keep the active workspace file attached to the composer as an automatic chip. Remove the chip to dismiss it until you switch files."
         }
       }
     }
   },
   "scripts": {
-    "build:webview": "esbuild src/webview/index.tsx --bundle --outfile=media/main.js --format=iife --target=es2022 --jsx=automatic --define:process.env.NODE_ENV='\"production\"' --minify --log-level=warning",
+    "build:webview": "npm run build:chat && npm run build:diff",
+    "build:chat": "esbuild src/webview/index.tsx --bundle --outfile=media/main.js --format=iife --target=es2022 --jsx=automatic --define:process.env.NODE_ENV='\"production\"' --minify --log-level=warning",
+    "build:diff": "esbuild src/webview/diff.tsx --bundle --outfile=media/diff.js --format=iife --target=es2022 --jsx=automatic --define:process.env.NODE_ENV='\"production\"' --minify --log-level=warning",
     "watch:webview": "esbuild src/webview/index.tsx --bundle --outfile=media/main.js --format=iife --target=es2022 --jsx=automatic --define:process.env.NODE_ENV='\"production\"' --watch --log-level=warning",
     "check:architecture": "node scripts/check-architecture.mjs",
-    "compile": "npm run check:architecture && tsc -p . && tsc -p tsconfig.webview.json && npm run build:webview",
+    "check:folders": "node scripts/check-workspace-folders.mjs",
+    "check:usage": "node scripts/check-context-usage.mjs",
+    "check:turn-diff": "node scripts/check-turn-diff.mjs",
+    "check:open-target": "node scripts/check-open-target.mjs",
+    "check:message-map": "node scripts/check-message-map.mjs",
+    "check:revert-api": "node scripts/check-revert-api.mjs",
+    "check:permissions": "node scripts/check-permissions.mjs",
+    "check:inbox-api": "node scripts/check-inbox-api.mjs",
+    "check:editor-context": "node scripts/check-editor-context.mjs",
+    "check:auto-context": "node scripts/check-auto-context.mjs",
+    "check:chat-surfaces": "node scripts/check-chat-surfaces.mjs",
+    "check:chat-panel": "node scripts/check-chat-panel.mjs",
+    "compile": "npm run check:architecture && tsc -p . && npm run check:folders && npm run check:usage && npm run check:turn-diff && npm run check:open-target && npm run check:message-map && npm run check:revert-api && npm run check:permissions && npm run check:inbox-api && npm run check:editor-context && npm run check:auto-context && npm run check:chat-surfaces && npm run check:chat-panel && tsc -p tsconfig.webview.json && npm run build:webview",
     "watch": "tsc -p . --watch",
     "vscode:prepublish": "npm run compile",
-    "package": "vsce package"
+    "package": "vsce package",
+    "local:install": "npm run compile && rm -f opencode-sidekick-*.vsix && npm run package && (code --uninstall-extension kkrenev.opencode-sidekick || true) && rm -rf \"$HOME/.vscode/extensions/kkrenev.opencode-sidekick-\"* && code --install-extension opencode-sidekick-*.vsix --force && code --list-extensions --show-versions | grep opencode-sidekick"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

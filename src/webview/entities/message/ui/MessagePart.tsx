@@ -1,6 +1,7 @@
 import * as React from 'react';
 import type { SidekickSettings } from '../../../shared/config/settings';
-import type { UiPart } from '../../../shared/types/ui';
+import type { OpenPathTarget, UiPart } from '../../../shared/types/ui';
+import { AttachmentView } from './AttachmentView';
 import { MarkdownContent } from './MarkdownContent';
 import { ReasoningBlock } from './ReasoningBlock';
 import { ToolCard } from './ToolCard';
@@ -14,6 +15,7 @@ export function MessagePart({
   onToggle,
   onCopy,
   onOpenExternal,
+  onOpenPath,
 }: {
   part: UiPart;
   partId: string;
@@ -23,6 +25,7 @@ export function MessagePart({
   onToggle: (id: string, fallback: boolean) => void;
   onCopy: (text: string) => void;
   onOpenExternal: (url: string) => void;
+  onOpenPath: (target: OpenPathTarget) => void;
 }): React.ReactElement | null {
   if (part.kind === 'text') {
     if (streaming) {
@@ -52,6 +55,10 @@ export function MessagePart({
     );
   }
 
+  if (part.kind === 'image' || part.kind === 'file') {
+    return <AttachmentView attachment={part} onOpenPath={onOpenPath} />;
+  }
+
   const fallback = !settings.compactTools;
   return (
     <ToolCard
@@ -61,9 +68,13 @@ export function MessagePart({
       status={part.status}
       input={part.input}
       output={part.output}
+      path={part.path}
+      line={part.line}
+      files={part.files}
       defaultOpen={fallback}
       isOpen={toggleState[partId] ?? fallback}
       onToggle={onToggle}
+      onOpenPath={onOpenPath}
     />
   );
 }

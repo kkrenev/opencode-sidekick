@@ -8,6 +8,16 @@ interface PopoverPosition {
   maxHeight: number;
 }
 
+/** Anything a popover can be placed against; an `HTMLElement` fits as is. */
+export interface PopoverAnchor {
+  getBoundingClientRect(): DOMRect;
+}
+
+/** A zero-size anchor at a viewport point, used by context menus. */
+export function pointAnchor(x: number, y: number): PopoverAnchor {
+  return { getBoundingClientRect: () => new DOMRect(x, y, 0, 0) };
+}
+
 export function Popover({
   anchor,
   align = 'full',
@@ -15,7 +25,7 @@ export function Popover({
   onClose,
   children,
 }: {
-  anchor: HTMLElement | null;
+  anchor: PopoverAnchor | null;
   align?: 'full' | 'menu';
   className?: string;
   onClose: () => void;
@@ -107,7 +117,7 @@ export function Popover({
       if (ref.current?.contains(target)) {
         return;
       }
-      if (anchor?.contains(target)) {
+      if (anchor instanceof HTMLElement && anchor.contains(target)) {
         return;
       }
       onClose();

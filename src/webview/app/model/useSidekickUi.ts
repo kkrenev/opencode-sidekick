@@ -1,16 +1,27 @@
 import * as React from 'react';
 import { post } from '../../shared/api/vscode';
+import { pointAnchor } from '../../shared/ui/Popover';
+import { chipAnchor } from './chipAnchor';
 import type { PopoverState } from './types';
 
+/** Title being edited in place on a tab. */
+export interface RenameState {
+  readonly id: string;
+  /** Title the server has right now; an unchanged draft posts nothing. */
+  readonly title: string;
+  readonly draft: string;
+}
+
 export function useSidekickUi() {
-  const [draft, setDraft] = React.useState('');
   const [historyOpen, setHistoryOpen] = React.useState(false);
   const [historyQuery, setHistoryQuery] = React.useState('');
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [popover, setPopover] = React.useState<PopoverState | null>(null);
-  const [toggles, setToggles] = React.useState<Record<string, boolean>>({});
+  const [rename, setRename] = React.useState<RenameState | null>(null);
   const [toast, setToast] = React.useState<string | null>(null);
   const toastTimer = React.useRef<number | undefined>(undefined);
+  /** Search counter: the host echoes it, so only this surface gets the answer. */
+  const historyRequest = React.useRef(0);
 
   const showToast = React.useCallback((message: string) => {
     setToast(message);
@@ -55,12 +66,79 @@ export function useSidekickUi() {
     [],
   );
 
+  const openAttach = React.useCallback((anchor: HTMLElement | null) => {
+    if (!anchor) {
+      return;
+    }
+    setHistoryOpen(false);
+    setSettingsOpen(false);
+    setPopover((previous) =>
+      previous?.kind === 'attach' ? null : { kind: 'attach', anchor },
+    );
+  }, []);
+
+  const openTabMenu = React.useCallback((id: string, anchor: HTMLElement) => {
+    setHistoryOpen(false);
+    setSettingsOpen(false);
+    setRename(null);
+    setPopover((previous) =>
+      previous?.kind === 'tab' && previous.id === id ? null : { kind: 'tab', anchor, id },
+    );
+  }, []);
+
+  const openMessageMenu = React.useCallback((id: string, point: { x: number; y: number }) => {
+    setHistoryOpen(false);
+    setSettingsOpen(false);
+    setRename(null);
+    setPopover((previous) =>
+      previous?.kind === 'message' && previous.id === id
+        ? null
+        : { kind: 'message', anchor: pointAnchor(point.x, point.y), id },
+    );
+  }, []);
+
+  const startRename = React.useCallback((tab: { id: string; title: string }) => {
+    setPopover(null);
+    setRename({ id: tab.id, title: tab.title, draft: tab.title });
+  }, []);
+
+  const setRenameDraft = React.useCallback((draft: string) => {
+    setRename((current) => (current ? { ...current, draft } : current));
+  }, []);
+
+  const cancelRename = React.useCallback(() => setRename(null), []);
+
+  React.useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || !event.shiftKey || event.altKey) {
+        return;
+      }
+      if (event.key.toLowerCase() !== 'a') {
+        return;
+      }
+      const anchor = chipAnchor('attach-menu');
+      if (!anchor) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      openAttach(anchor);
+    };
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => document.removeEventListener('keydown', onKeyDown, true);
+  }, [openAttach]);
+
   React.useEffect(() => {
     if (!historyOpen) {
       return;
     }
     const timer = window.setTimeout(() => {
-      post({ type: 'searchSessions', query: historyQuery });
+      historyRequest.current += 1;
+      post({
+        type: 'searchSessions',
+        query: historyQuery,
+        requestId: `history-${historyRequest.current}`,
+      });
     }, 220);
     return () => window.clearTimeout(timer);
   }, [historyOpen, historyQuery]);
@@ -74,6 +152,10 @@ export function useSidekickUi() {
         setPopover(null);
         return;
       }
+      if (rename) {
+        setRename(null);
+        return;
+      }
       if (settingsOpen) {
         setSettingsOpen(false);
         return;
@@ -84,11 +166,9 @@ export function useSidekickUi() {
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [popover, settingsOpen, historyOpen]);
+  }, [popover, rename, settingsOpen, historyOpen]);
 
   return {
-    draft,
-    setDraft,
     historyOpen,
     setHistoryOpen,
     historyQuery,
@@ -97,8 +177,7 @@ export function useSidekickUi() {
     setSettingsOpen,
     popover,
     setPopover,
-    toggles,
-    setToggles,
+    rename,
     toast,
     showToast,
     openHistory,
@@ -106,5 +185,11 @@ export function useSidekickUi() {
     openSettings,
     openMenu,
     openPicker,
+    openAttach,
+    openTabMenu,
+    openMessageMenu,
+    startRename,
+    setRenameDraft,
+    cancelRename,
   };
 }

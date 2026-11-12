@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { normalizeThresholds } from './shared/context-usage';
 import {
   AccentColor,
   Density,
@@ -7,6 +8,8 @@ import {
   SendKey,
   SETTING_DEFAULTS,
   SidekickSettings,
+  strictBoolean,
+  strictQueueDelivery,
 } from './shared/settings';
 
 export type { SidekickSettings } from './shared/settings';
@@ -28,6 +31,11 @@ const SETTING_KEYS = new Set<keyof SidekickSettings>([
   'fontSize',
   'cliPath',
   'autoStartServer',
+  'contextWarnPercent',
+  'contextCompactPercent',
+  'permissionsAutoApproveSafe',
+  'queueDelivery',
+  'autoAttachActiveFile',
 ]);
 
 export function isSettingKey(value: string): value is keyof SidekickSettings {
@@ -36,6 +44,10 @@ export function isSettingKey(value: string): value is keyof SidekickSettings {
 
 export function readSettings(): SidekickSettings {
   const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+  const thresholds = normalizeThresholds(
+    config.get<number>('contextWarnPercent', SETTING_DEFAULTS.contextWarnPercent),
+    config.get<number>('contextCompactPercent', SETTING_DEFAULTS.contextCompactPercent),
+  );
   return {
     defaultModel: config.get<string>('defaultModel', SETTING_DEFAULTS.defaultModel),
     defaultEffort: config.get<string>('defaultEffort', SETTING_DEFAULTS.defaultEffort),
@@ -50,6 +62,17 @@ export function readSettings(): SidekickSettings {
     fontSize: config.get<FontSize>('fontSize', SETTING_DEFAULTS.fontSize),
     cliPath: config.get<string>('cliPath', SETTING_DEFAULTS.cliPath),
     autoStartServer: config.get<boolean>('autoStartServer', SETTING_DEFAULTS.autoStartServer),
+    contextWarnPercent: thresholds.warn,
+    contextCompactPercent: thresholds.compact,
+    permissionsAutoApproveSafe: strictBoolean(
+      config.get<unknown>('permissionsAutoApproveSafe'),
+      SETTING_DEFAULTS.permissionsAutoApproveSafe,
+    ),
+    queueDelivery: strictQueueDelivery(config.get<unknown>('queueDelivery')),
+    autoAttachActiveFile: strictBoolean(
+      config.get<unknown>('autoAttachActiveFile'),
+      SETTING_DEFAULTS.autoAttachActiveFile,
+    ),
   };
 }
 
@@ -75,6 +98,11 @@ export async function resetUiSettings(): Promise<void> {
     'accent',
     'density',
     'fontSize',
+    'contextWarnPercent',
+    'contextCompactPercent',
+    'permissionsAutoApproveSafe',
+    'queueDelivery',
+    'autoAttachActiveFile',
   ];
   for (const key of keys) {
     await config.update(key, SETTING_DEFAULTS[key], updateTarget(config, key));

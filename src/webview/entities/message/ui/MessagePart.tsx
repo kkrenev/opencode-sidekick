@@ -1,6 +1,6 @@
 import * as React from 'react';
 import type { SidekickSettings } from '../../../shared/config/settings';
-import type { OpenPathTarget, UiPart } from '../../../shared/types/ui';
+import type { OpenDiffTarget, OpenPathTarget, UiPart } from '../../../shared/types/ui';
 import { AttachmentView } from './AttachmentView';
 import { MarkdownContent } from './MarkdownContent';
 import { ReasoningBlock } from './ReasoningBlock';
@@ -16,6 +16,8 @@ export function MessagePart({
   onCopy,
   onOpenExternal,
   onOpenPath,
+  onOpenDiff,
+  onOpenTerminal,
 }: {
   part: UiPart;
   partId: string;
@@ -26,6 +28,8 @@ export function MessagePart({
   onCopy: (text: string) => void;
   onOpenExternal: (url: string) => void;
   onOpenPath: (target: OpenPathTarget) => void;
+  onOpenDiff: (target: OpenDiffTarget) => void;
+  onOpenTerminal: (path?: string) => void;
 }): React.ReactElement | null {
   if (part.kind === 'text') {
     if (streaming) {
@@ -82,10 +86,19 @@ export function MessagePart({
       path={part.path}
       line={part.line}
       files={part.files}
+      ms={part.ms}
+      exitCode={part.exitCode}
+      command={part.command}
+      edit={part.edit}
+      outputTruncated={part.outputTruncated}
       defaultOpen={fallback}
       isOpen={toggleState[partId] ?? fallback}
+      outputExpanded={toggleState[`${partId}:output-expanded`] ?? false}
       onToggle={onToggle}
+      onCopy={onCopy}
       onOpenPath={onOpenPath}
+      onOpenDiff={onOpenDiff}
+      onOpenTerminal={onOpenTerminal}
     />
   );
 }

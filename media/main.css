@@ -1031,8 +1031,52 @@ select:focus-visible {
   height: 12px;
 }
 
+/* Timing and exit code sit between the title and the state icon. The title
+   keeps `min-width: 0`, so a narrow panel truncates it instead of wrapping the
+   head into two lines. */
+.tool-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.tool-duration {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.tool-exit {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  line-height: 1;
+  padding: 2px 5px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.tool-exit[data-ok='false'] {
+  color: var(--vscode-errorForeground, #f87171);
+  border-color: color-mix(in srgb, var(--vscode-errorForeground, #f87171) 45%, transparent);
+}
+
 .tool[data-status='ok'] .tool-state {
   color: var(--accent);
+}
+
+.tool[data-status='queued'] .tool-state {
+  color: var(--dim);
+}
+
+.tool-queued {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
 }
 
 .tool[data-status='error'] .tool-state {
@@ -1080,6 +1124,64 @@ select:focus-visible {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   color: var(--muted);
+}
+
+/* The shell command is shown once and stays selectable; its two buttons repeat
+   it in a terminal or put it on the clipboard. */
+.tool-command {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.tool-command code {
+  display: block;
+  max-height: 130px;
+  overflow: auto;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--vscode-foreground);
+}
+
+.tool-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tool-actions button,
+.tool-more button {
+  padding: 3px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
+.tool-actions button:hover,
+.tool-more button:hover {
+  background: var(--surface-2);
+  color: var(--vscode-foreground);
+}
+
+.tool-more {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tool-more-note,
+.tool-note {
+  font-size: 10px;
+  color: var(--dim);
 }
 
 /* Transcript attachments */

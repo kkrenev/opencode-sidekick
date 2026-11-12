@@ -2,7 +2,7 @@ import * as React from 'react';
 import type { SidekickSettings } from '../../../shared/config/settings';
 import { clockTime } from '../../../shared/lib/format';
 import type { ModelEntry } from '../../../shared/types/domain';
-import type { OpenPathTarget, UiAttachmentPart, UiMessage } from '../../../shared/types/ui';
+import type { OpenDiffTarget, OpenPathTarget, UiAttachmentPart, UiMessage } from '../../../shared/types/ui';
 import { messageText } from '../../../../shared/transcript-markdown';
 import { labelFor } from '../lib/labels';
 import { Icon } from '../../../shared/ui/Icon';
@@ -22,6 +22,8 @@ export function Message({
   onMessageMenu,
   onOpenExternal,
   onOpenPath,
+  onOpenDiff,
+  onOpenTerminal,
 }: {
   message: UiMessage;
   models: readonly ModelEntry[];
@@ -36,6 +38,8 @@ export function Message({
   onMessageMenu: (id: string, point: { x: number; y: number }) => void;
   onOpenExternal: (url: string) => void;
   onOpenPath: (target: OpenPathTarget) => void;
+  onOpenDiff: (target: OpenDiffTarget) => void;
+  onOpenTerminal: (path?: string) => void;
 }): React.ReactElement {
   const streaming = message.role === 'assistant' && busy && isLast;
   const hasText = messageText(message).length > 0;
@@ -124,6 +128,8 @@ export function Message({
               onCopy={onCopy}
               onOpenExternal={onOpenExternal}
               onOpenPath={onOpenPath}
+              onOpenDiff={onOpenDiff}
+              onOpenTerminal={onOpenTerminal}
             />
           );
         })}

@@ -7,8 +7,9 @@ import type { ModelEntry } from '../../../shared/types/domain';
 import type { HistoryState, UiNotice } from '../../../shared/types/snapshot';
 import type { PermissionDecision, PermissionRequest } from '../../../../shared/permission';
 import type { SearchHit } from '../../../../shared/chat-search';
+import { toolOutputWindow } from '../../../../shared/tool-card';
 import type { TurnDiffSummary, TurnDiffFile } from '../../../../shared/turn-diff';
-import type { OpenPathTarget, UiMessage } from '../../../shared/types/ui';
+import type { OpenDiffTarget, OpenPathTarget, UiMessage } from '../../../shared/types/ui';
 import { THREAD_WINDOW_THRESHOLD } from '../lib/thread-window';
 import { useThreadWindow, type ThreadAnchor } from '../lib/useThreadWindow';
 import { applyHighlights, clearHighlights } from '../lib/search-highlight';
@@ -70,6 +71,8 @@ export function Conversation({
   onMessageMenu,
   onOpenExternal,
   onOpenPath,
+  onOpenDiff,
+  onOpenTerminal,
   onSuggestion,
   onRetry,
   onReviewTurn,
@@ -118,6 +121,10 @@ export function Conversation({
   onOpenExternal: (url: string) => void;
   /** Opens an attachment or a tool file at its line. */
   onOpenPath: (target: OpenPathTarget) => void;
+  /** Opens an `edit` tool card as a `vscode.diff` of before and after. */
+  onOpenDiff: (target: OpenDiffTarget) => void;
+  /** Opens an empty terminal in the session or file directory. */
+  onOpenTerminal: (path?: string) => void;
   onSuggestion: (text: string) => void;
   onRetry: () => void;
   onReviewTurn: (from: string) => void;
@@ -197,10 +204,12 @@ export function Conversation({
       return;
     }
     // A collapsed reasoning or tool body has no DOM region yet: open it first,
-    // then the highlight pass can paint and scroll to the match.
-    const reveal = revealTarget(hit, messages, settings);
-    if (reveal && !(toggleState[reveal.id] ?? reveal.fallback)) {
-      onToggle(reveal.id, reveal.fallback);
+    // then the highlight pass can paint and scroll to the match. A hit behind
+    // the collapsed output window also expands that window.
+    for (const reveal of revealTargets(hit, messages, settings)) {
+      if (!(toggleState[reveal.id] ?? reveal.fallback)) {
+        onToggle(reveal.id, reveal.fallback);
+      }
     }
     restoreRef.current = null;
     setRestore(null);
@@ -440,6 +449,8 @@ export function Conversation({
                       onMessageMenu={onMessageMenu}
                       onOpenExternal={onOpenExternal}
                       onOpenPath={onOpenPath}
+                      onOpenDiff={onOpenDiff}
+                      onOpenTerminal={onOpenTerminal}
                     />
                   </div>
                 ))}
@@ -629,36 +640,47 @@ interface RevealTarget {
 /**
  * Collapsed reasoning and tool bodies have no DOM region, so their hits cannot
  * be highlighted or scrolled to. A jump opens the body the hit lives in; name
- * and title hits already sit in the always-rendered card head.
+ * and title hits already sit in the always-rendered card head. A hit in tool
+ * input or output also expands the truncated window, because the match may sit
+ * in the part the card does not render while collapsed.
  */
-function revealTarget(
+function revealTargets(
   hit: SearchHit,
   messages: readonly UiMessage[],
   settings: SidekickSettings,
-): RevealTarget | null {
+): RevealTarget[] {
   if (hit.region === 'user') {
-    return null;
+    return [];
   }
   const [indexText, field] = hit.region.split(':');
   const index = Number(indexText);
   if (!Number.isInteger(index) || index < 0) {
-    return null;
+    return [];
   }
   const part = messages.find((message) => message.id === hit.messageId)?.parts[index];
   if (!part) {
-    return null;
+    return [];
   }
   if (field === 'input' || field === 'output') {
-    return part.kind === 'tool'
-      ? { id: `${hit.messageId}:${index}`, fallback: !settings.compactTools }
-      : null;
+    if (part.kind !== 'tool') {
+      return [];
+    }
+    const cardId = `${hit.messageId}:${index}`;
+    const reveals: RevealTarget[] = [{ id: cardId, fallback: !settings.compactTools }];
+    // A hit in the visible head is already in the DOM once the card opens;
+    // only a hit behind the collapsed window needs the expanded render.
+    const text = field === 'input' ? part.input : part.output;
+    if (hit.offset >= toolOutputWindow(text, false).text.length) {
+      reveals.push({ id: `${cardId}:output-expanded`, fallback: false });
+    }
+    return reveals;
   }
   if (field !== undefined) {
-    return null;
+    return [];
   }
   return part.kind === 'reasoning'
-    ? { id: `${hit.messageId}:${index}`, fallback: settings.reasoning === 'expanded' }
-    : null;
+    ? [{ id: `${hit.messageId}:${index}`, fallback: settings.reasoning === 'expanded' }]
+    : [];
 }
 
 /**

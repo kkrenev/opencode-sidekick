@@ -47,7 +47,8 @@ import {
   type SurfaceKind,
   type SurfaceState,
 } from './shared/chat-surface';
-import { resolveOpenTarget } from './shared/open-target';
+import { resolveOpenTarget, relativeToRoot } from './shared/open-target';
+import { TOOL_OUTPUT_MAX_CHARS } from './shared/tool-card';
 import type { SessionRuntimeState } from './shared/session-runtime';
 import { DELTA_BUFFER_LIMIT, DeltaChunk } from './shared/session-stream';
 import {
@@ -2644,6 +2645,83 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
   }
 
   /**
+   * Shows an `edit` tool call as a diff of its before and after text. Both
+   * sides are untitled documents, because the old text no longer exists on
+   * disk. A pair over the frame budget, or an edit without text, opens the
+   * file instead of guessing a diff from a patch.
+   */
+  private async openEditDiff(value: string, before?: string, after?: string): Promise<void> {
+    const label = value.length > 0 ? value : 'the edit';
+    const roots = this.folderDirectories();
+    const resolved = resolveOpenTarget(roots, this.directory, value);
+    if (!resolved) {
+      void vscode.window.showWarningMessage(`Cannot open ${label}: it is outside the workspace.`);
+      return;
+    }
+    if (
+      typeof before !== 'string' ||
+      typeof after !== 'string' ||
+      (before.length === 0 && after.length === 0)
+    ) {
+      void vscode.window.showWarningMessage(
+        `Cannot show a diff for ${label}: it has no before/after text. Opening the file instead.`,
+      );
+      await this.openPath('', value, 1);
+      return;
+    }
+    if (before.length + after.length > TOOL_OUTPUT_MAX_CHARS) {
+      void vscode.window.showWarningMessage(
+        `Cannot show a diff for ${label}: it is too large. Opening the file instead.`,
+      );
+      await this.openPath('', value, 1);
+      return;
+    }
+    const relative = relativeToRoot(roots, resolved.fsPath) ?? value;
+    try {
+      const left = await vscode.workspace.openTextDocument({ content: before });
+      const right = await vscode.workspace.openTextDocument({ content: after });
+      await vscode.commands.executeCommand(
+        'vscode.diff',
+        left.uri,
+        right.uri,
+        `${relative} (edit)`,
+        { preview: true },
+      );
+    } catch {
+      void vscode.window.showWarningMessage(`Cannot show a diff for ${label}.`);
+    }
+  }
+
+  /**
+   * Opens an empty terminal where the tool ran: the session folder, or the
+   * folder of the file the tool touched. Nothing is typed into it, so the
+   * command can be repeated by hand.
+   */
+  private async openToolTerminal(value?: string): Promise<void> {
+    const roots = this.folderDirectories();
+    const resolved =
+      typeof value === 'string' && value.length > 0
+        ? resolveOpenTarget(roots, this.directory, value)
+        : undefined;
+    let cwd = this.directory;
+    if (resolved) {
+      try {
+        const info = await fs.stat(resolved.fsPath);
+        cwd = info.isDirectory() ? resolved.fsPath : path.dirname(resolved.fsPath);
+      } catch {
+        // A deleted file still names a folder the user was working in.
+        cwd = path.dirname(resolved.fsPath);
+      }
+    }
+    const terminal = vscode.window.createTerminal({
+      name: 'Sidekick',
+      cwd,
+      location: vscode.TerminalLocation.Panel,
+    });
+    terminal.show();
+  }
+
+  /**
    * A preview URI only works in the webview that minted it, and only for a file
    * the webview is allowed to serve: the attachments folder is a local resource
    * root, a workspace file is not, so the panel falls back to a file chip there.
@@ -4974,6 +5052,17 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
         );
         return;
       }
+      case 'openEditDiff': {
+        await this.openEditDiff(
+          typeof message.path === 'string' ? message.path : '',
+          typeof message.before === 'string' ? message.before : undefined,
+          typeof message.after === 'string' ? message.after : undefined,
+        );
+        return;
+      }
+      case 'openToolTerminal':
+        await this.openToolTerminal(typeof message.path === 'string' ? message.path : undefined);
+        return;
       case 'imagePreview': {
         const requestId = readRequestId(message);
         if (requestId.length === 0) {

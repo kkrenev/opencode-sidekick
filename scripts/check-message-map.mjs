@@ -144,6 +144,122 @@ check('a file entry without a URI or name becomes a chip named attachment', () =
   assert.equal(message.parts[0].name, 'attachment');
 });
 
+// Tool status, timing, command, exit code and edit text come from the state.
+check('a shell result carries its command, exit code and duration', () => {
+  const [message] = mapMessages([
+    assistant('a5', [
+      {
+        type: 'tool',
+        name: 'shell',
+        time: { created: 1000, completed: 1340 },
+        state: {
+          status: 'completed',
+          input: { command: 'npm test\n--watch' },
+          metadata: { exit: 2 },
+          time: { created: 1000, completed: 1340 },
+          content: [{ type: 'text', text: 'out' }],
+        },
+      },
+    ]),
+  ]);
+  const tool = message.parts[0];
+  assert.equal(tool.status, 'ok');
+  assert.equal(tool.ms, 340);
+  assert.equal(tool.exitCode, 2);
+  assert.equal(tool.command, 'npm test\n--watch');
+});
+
+// A pending call is queued, not running, and a missing end has no duration.
+check('a pending tool is queued and has no duration yet', () => {
+  const [message] = mapMessages([
+    assistant('a6', [
+      {
+        type: 'tool',
+        name: 'read',
+        state: { status: 'pending', input: { filePath: 'src/a.ts' }, time: { created: 10 } },
+      },
+    ]),
+  ]);
+  const tool = message.parts[0];
+  assert.equal(tool.status, 'queued');
+  assert.equal('ms' in tool, false);
+  assert.equal('exitCode' in tool, false);
+  assert.equal('command' in tool, false);
+});
+
+// The server queues a tool call as `streaming`; it must not read as running.
+check('a streaming tool is queued', () => {
+  const [message] = mapMessages([
+    assistant('a6b', [
+      { type: 'tool', name: 'shell', state: { status: 'streaming', input: { command: 'ls' } } },
+    ]),
+  ]);
+  assert.equal(message.parts[0].status, 'queued');
+});
+
+// `ran` is when execution began, so a running call has no duration yet.
+check('a running tool has no duration from its start timestamp', () => {
+  const [message] = mapMessages([
+    assistant('a6c', [
+      {
+        type: 'tool',
+        name: 'shell',
+        state: { status: 'running', input: { command: 'sleep 1' }, time: { created: 1000, ran: 1340 } },
+      },
+    ]),
+  ]);
+  const tool = message.parts[0];
+  assert.equal(tool.status, 'running');
+  assert.equal('ms' in tool, false);
+});
+
+check('an error tool keeps its error status', () => {
+  const [message] = mapMessages([
+    assistant('a7', [
+      { type: 'tool', name: 'read', state: { status: 'error', error: 'nope' } },
+    ]),
+  ]);
+  assert.equal(message.parts[0].status, 'error');
+  assert.equal(message.parts[0].output, 'nope');
+});
+
+// `before` may be empty (a new file), and a server-side cut is flagged.
+check('an edit carries before and after, and a truncation note', () => {
+  const [message] = mapMessages([
+    assistant('a8', [
+      {
+        type: 'tool',
+        name: 'edit',
+        state: {
+          status: 'completed',
+          input: { path: 'src/a.ts', oldString: '', newString: 'next' },
+          metadata: { truncated: true },
+          time: { created: 5, completed: 25 },
+        },
+      },
+    ]),
+  ]);
+  const tool = message.parts[0];
+  assert.deepEqual(tool.edit, { before: '', after: 'next' });
+  assert.equal(tool.outputTruncated, true);
+  assert.equal(tool.ms, 20);
+});
+
+check('an edit over the frame budget keeps no diff text', () => {
+  const [message] = mapMessages([
+    assistant('a9', [
+      {
+        type: 'tool',
+        name: 'edit',
+        state: {
+          input: { path: 'a.ts', oldString: 'x'.repeat(150_000), newString: 'y'.repeat(150_000) },
+        },
+      },
+    ]),
+  ]);
+  assert.equal('edit' in message.parts[0], false);
+});
+
 if (failures > 0) {
   console.error(`${failures} message-map check(s) failed`);
   process.exit(1);

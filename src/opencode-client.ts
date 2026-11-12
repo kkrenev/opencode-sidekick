@@ -133,6 +133,15 @@ export interface RawPart {
   readonly time?: { readonly created?: number; readonly completed?: number };
 }
 
+export interface RawToolTime {
+  readonly created?: number;
+  readonly start?: number;
+  readonly completed?: number;
+  /** When execution began; not a completion timestamp. */
+  readonly ran?: number;
+  readonly end?: number;
+}
+
 export interface RawToolState {
   readonly status?: string;
   readonly input?: unknown;
@@ -140,6 +149,8 @@ export interface RawToolState {
   readonly content?: unknown;
   readonly error?: unknown;
   readonly metadata?: unknown;
+  /** A shell call reports its interval on the state, not only on the part. */
+  readonly time?: RawToolTime;
 }
 
 export interface RawMessage {

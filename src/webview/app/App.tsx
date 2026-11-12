@@ -306,6 +306,17 @@ export function App(): React.ReactElement {
         onMessageMenu={ui.openMessageMenu}
         onOpenExternal={(url) => post({ type: 'openExternal', url })}
         onOpenPath={(target) => post({ type: 'openPath', ...target })}
+        onOpenDiff={(target) =>
+          post({
+            type: 'openEditDiff',
+            path: target.path,
+            before: target.before,
+            after: target.after,
+          })
+        }
+        onOpenTerminal={(path) =>
+          post({ type: 'openToolTerminal', ...(path !== undefined ? { path } : {}) })
+        }
         onSuggestion={actions.applySuggestion}
         onRetry={actions.retry}
         onReviewTurn={(from) =>

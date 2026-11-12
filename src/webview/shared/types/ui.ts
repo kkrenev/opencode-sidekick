@@ -39,13 +39,23 @@ export type UiPart =
       readonly kind: 'tool';
       readonly id: string;
       readonly name: string;
-      readonly status: 'running' | 'ok' | 'error';
+      readonly status: 'queued' | 'running' | 'ok' | 'error';
       readonly title: string;
       readonly input: string;
       readonly output: string;
       /** Path the tool touched, when its input names one. */
       readonly path?: string;
       readonly line?: number;
+      /** Wall time of the call; both ends of the interval must be known. */
+      readonly ms?: number;
+      /** Exit code of a shell tool. */
+      readonly exitCode?: number;
+      /** Full command of a shell tool. */
+      readonly command?: string;
+      /** Before/after text of an `edit`; absent when it does not fit a frame. */
+      readonly edit?: { readonly before: string; readonly after: string };
+      /** The server itself truncated the tool output. */
+      readonly outputTruncated?: boolean;
       /** Files the tool returned, shown even while the card is collapsed. */
       readonly files?: readonly UiAttachment[];
     };
@@ -61,3 +71,10 @@ export interface UiMessage {
 
 /** What a transcript chip asks the host to open; a URI wins over a path. */
 export type { OpenPathRequest as OpenPathTarget } from '../../../shared/open-target';
+
+/** What an `edit` tool card asks the host to show in `vscode.diff`. */
+export interface OpenDiffTarget {
+  readonly path: string;
+  readonly before: string;
+  readonly after: string;
+}

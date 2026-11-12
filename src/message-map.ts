@@ -1,4 +1,4 @@
-import { RawMessage, RawPart, RawToolState } from './opencode-client';
+import { RawMessage, RawPart, RawToolState, RawToolTime } from './opencode-client';
 import {
   attachmentBaseName,
   inlineImageFits,
@@ -6,6 +6,7 @@ import {
   mimeFromUri,
 } from './shared/attachment-kind';
 import { fileUriPath, relativeToRoot } from './shared/open-target';
+import { TOOL_OUTPUT_MAX_CHARS } from './shared/tool-card';
 
 /**
  * One attachment of a message or of a tool result. `uri` is the raw `file:` or
@@ -53,13 +54,23 @@ export type UiPart =
       readonly kind: 'tool';
       readonly id: string;
       readonly name: string;
-      readonly status: 'running' | 'ok' | 'error';
+      readonly status: 'queued' | 'running' | 'ok' | 'error';
       readonly title: string;
       readonly input: string;
       readonly output: string;
       /** Path the tool touched, when its input names one. */
       readonly path?: string;
       readonly line?: number;
+      /** Wall time of the call; both ends of the interval must be known. */
+      readonly ms?: number;
+      /** Exit code of a shell tool. */
+      readonly exitCode?: number;
+      /** Full command of a shell tool. */
+      readonly command?: string;
+      /** Before/after text of an `edit`; absent when it does not fit a frame. */
+      readonly edit?: { readonly before: string; readonly after: string };
+      /** The server itself truncated the tool output. */
+      readonly outputTruncated?: boolean;
       /** Files the tool returned, shown even while the card is collapsed. */
       readonly files?: readonly UiAttachment[];
     };
@@ -164,21 +175,31 @@ function mapPart(part: RawPart, directories: readonly string[]): UiPart | undefi
 
   if (part.type === 'tool') {
     const state = part.state ?? {};
+    const name = part.name ?? 'tool';
     const path = attachmentPath(
       firstString(...PATH_KEYS.map((key) => toolInputValue(state, key))),
       directories,
     );
     const line = path !== undefined ? toolLine(state) : undefined;
+    const ms = toolMs(part, state);
+    const exitCode = toolExitCode(state);
+    const command = toolCommand(name, state);
+    const edit = toolEdit(state);
     return {
       kind: 'tool',
       id: part.id ?? part.name ?? 'tool',
-      name: part.name ?? 'tool',
+      name,
       status: toolStatus(state),
-      title: toolTitle(part.name ?? 'tool', state),
+      title: toolTitle(name, state),
       input: toolInput(state),
       output: toolOutput(state),
       ...(path !== undefined ? { path } : {}),
       ...(line !== undefined ? { line } : {}),
+      ...(ms !== undefined ? { ms } : {}),
+      ...(exitCode !== undefined ? { exitCode } : {}),
+      ...(command !== undefined ? { command } : {}),
+      ...(edit !== undefined ? { edit } : {}),
+      ...(toolServerTruncated(state) ? { outputTruncated: true } : {}),
       ...toolFiles(state, directories),
     };
   }
@@ -362,14 +383,95 @@ function firstString(...values: unknown[]): string | undefined {
   return undefined;
 }
 
-function toolStatus(state: RawToolState): 'running' | 'ok' | 'error' {
+function toolStatus(state: RawToolState): 'queued' | 'running' | 'ok' | 'error' {
   if (state.status === 'error') {
     return 'error';
   }
   if (state.status === 'completed') {
     return 'ok';
   }
+  // The server queues a tool call as `streaming`; older shapes say `pending`.
+  if (
+    state.status === 'streaming' ||
+    state.status === 'pending' ||
+    state.status === 'queued'
+  ) {
+    return 'queued';
+  }
   return 'running';
+}
+
+/**
+ * Wall time of a call. A live shell puts its interval on `state.time`, older
+ * shapes keep it on the part, so both are read. `ran` is when execution began,
+ * not when it finished: using it would freeze a running call's duration at its
+ * first millisecond, so only a completed or ended call has a duration.
+ */
+function toolMs(part: RawPart, state: RawToolState): number | undefined {
+  const time: RawToolTime | undefined = state.time ?? part.time;
+  if (!time) {
+    return undefined;
+  }
+  const start = finiteNumber(time.created) ?? finiteNumber(time.start);
+  const end = finiteNumber(time.completed) ?? finiteNumber(time.end);
+  if (start === undefined || end === undefined || end <= start) {
+    return undefined;
+  }
+  return end - start;
+}
+
+/** Exit code a shell tool reports in its metadata. */
+function toolExitCode(state: RawToolState): number | undefined {
+  return finiteNumber(metadataField(state, 'exit'));
+}
+
+/** Full command of a shell tool; its title only keeps the first line. */
+function toolCommand(name: string, state: RawToolState): string | undefined {
+  if (name !== 'shell' && name !== 'bash' && name !== 'terminal') {
+    return undefined;
+  }
+  const input = state.input;
+  if (!input || typeof input !== 'object') {
+    return undefined;
+  }
+  const command = (input as { command?: unknown }).command;
+  return typeof command === 'string' && command.trim().length > 0 ? command : undefined;
+}
+
+/**
+ * Before/after text of an `edit`. The whole edit rides in the frame, so a pair
+ * over the output budget is dropped and the card falls back to opening the file.
+ */
+function toolEdit(state: RawToolState): { before: string; after: string } | undefined {
+  const input = state.input;
+  if (!input || typeof input !== 'object') {
+    return undefined;
+  }
+  const record = input as { oldString?: unknown; newString?: unknown };
+  if (typeof record.oldString !== 'string' || typeof record.newString !== 'string') {
+    return undefined;
+  }
+  if (record.oldString.length + record.newString.length > TOOL_OUTPUT_MAX_CHARS) {
+    return undefined;
+  }
+  return { before: record.oldString, after: record.newString };
+}
+
+/** The server cut the output itself, so the card says so next to the window. */
+function toolServerTruncated(state: RawToolState): boolean {
+  return metadataField(state, 'truncated') === true;
+}
+
+function metadataField(state: RawToolState, key: string): unknown {
+  const metadata = state.metadata;
+  if (!metadata || typeof metadata !== 'object') {
+    return undefined;
+  }
+  return (metadata as Record<string, unknown>)[key];
+}
+
+function finiteNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 function toolTitle(name: string, state: RawToolState): string {

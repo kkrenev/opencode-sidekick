@@ -72,7 +72,7 @@ export function Message({
     return (
       <div className="msg user" data-msg={message.id} onContextMenu={onContextMenu}>
         {text.trim().length > 0 ? (
-          <div className="bubble">
+          <div className="bubble" data-search-region={`${message.id}:user`}>
             <span>{text}</span>
             {settings.showTimestamps && message.time ? (
               <span className="bubble-time">{clockTime(message.time)}</span>

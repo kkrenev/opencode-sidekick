@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Find in the chat with `Cmd/Ctrl+F`: a find bar over the transcript counts `N/M`, `Enter` / `Shift+Enter` (or the arrows) cycle matches, `Escape` closes it, and matches are highlighted in message text, reasoning and tool names or titles. A jump opens a collapsed reasoning block or tool body and scrolls the match itself into view, tool input and output are searchable behind an off-by-default **Output** toggle, the bar sits in the layout flow instead of covering the transcript, and a jump reaches messages outside the virtual window without fighting auto-scroll.
 - Replaced the single-session header pill with session tabs: open sessions from history or the `+` button, switch with `Cmd/Ctrl+1..9`, close with `Cmd/Ctrl+W` or a middle click.
 - Open tabs and the active session are persisted per workspace, sessions deleted on the server are marked missing, and running tabs show a live indicator.
 - Each tab keeps its own composer draft, caret, transcript scroll position, expanded reasoning/tool blocks, and model/effort/mode through a host-backed `SessionRuntime`; typing in a new unsaved chat carries over when the session is created.

@@ -6,10 +6,12 @@ import { clockTime } from '../../../shared/lib/format';
 import type { ModelEntry } from '../../../shared/types/domain';
 import type { HistoryState, UiNotice } from '../../../shared/types/snapshot';
 import type { PermissionDecision, PermissionRequest } from '../../../../shared/permission';
+import type { SearchHit } from '../../../../shared/chat-search';
 import type { TurnDiffSummary, TurnDiffFile } from '../../../../shared/turn-diff';
 import type { OpenPathTarget, UiMessage } from '../../../shared/types/ui';
 import { THREAD_WINDOW_THRESHOLD } from '../lib/thread-window';
 import { useThreadWindow, type ThreadAnchor } from '../lib/useThreadWindow';
+import { applyHighlights, clearHighlights } from '../lib/search-highlight';
 import { ConversationEmpty } from './ConversationEmpty';
 import { ConversationOffline } from './ConversationOffline';
 
@@ -59,6 +61,7 @@ export function Conversation({
   toggleState,
   stickToBottom,
   distanceFromBottom,
+  search,
   onToggle,
   onScrollChange,
   onLoadOlder,
@@ -98,6 +101,14 @@ export function Conversation({
   toggleState: Record<string, boolean>;
   stickToBottom: boolean;
   distanceFromBottom: number;
+  /** Transcript search: hits, the active one and the jump trigger. */
+  search: {
+    readonly open: boolean;
+    readonly query: string;
+    readonly hits: readonly SearchHit[];
+    readonly current: number;
+    readonly jumpNonce: number;
+  };
   onToggle: (id: string, fallback: boolean) => void;
   onScrollChange: (scrollTop: number, stickToBottom: boolean, distanceFromBottom: number) => void;
   onLoadOlder: () => void;
@@ -130,6 +141,10 @@ export function Conversation({
   const anchorRef = React.useRef<ThreadAnchor | null>(null);
   const fillRef = React.useRef(-1);
   const programmaticRef = React.useRef<number | null>(null);
+  const jumpRef = React.useRef(false);
+  /** A jump still has to scroll the active match itself into view. */
+  const rangeJumpRef = React.useRef(false);
+  const [, setJumpTick] = React.useState(0);
   const restoreRef = React.useRef<Restore | null>(restore);
   restoreRef.current = restore;
 
@@ -138,7 +153,7 @@ export function Conversation({
     ids,
     scrollRef,
     enabled: virtual,
-    bottomOffset: stickToBottom ? 0 : restore ? restore.distance : null,
+    bottomOffset: stickToBottom && !jumpRef.current ? 0 : restore ? restore.distance : null,
     anchor: anchorRef.current,
   });
 
@@ -155,6 +170,8 @@ export function Conversation({
     const element = scrollRef.current;
     anchorRef.current = null;
     fillRef.current = -1;
+    jumpRef.current = false;
+    rangeJumpRef.current = false;
     if (!element) {
       return;
     }
@@ -169,6 +186,30 @@ export function Conversation({
     }
   }, [sessionId]);
 
+  // Search navigation: point the virtualizer at the hit, then let the main
+  // effect below align it. `setJumpTick` re-renders so `useThreadWindow` gets
+  // the new anchor and renders a message outside the current window.
+  React.useLayoutEffect(() => {
+    const hit = search.open ? search.hits[search.current] : undefined;
+    if (!hit) {
+      jumpRef.current = false;
+      rangeJumpRef.current = false;
+      return;
+    }
+    // A collapsed reasoning or tool body has no DOM region yet: open it first,
+    // then the highlight pass can paint and scroll to the match.
+    const reveal = revealTarget(hit, messages, settings);
+    if (reveal && !(toggleState[reveal.id] ?? reveal.fallback)) {
+      onToggle(reveal.id, reveal.fallback);
+    }
+    restoreRef.current = null;
+    setRestore(null);
+    anchorRef.current = { id: hit.messageId, top: 8 };
+    jumpRef.current = true;
+    rangeJumpRef.current = true;
+    setJumpTick((value) => value + 1);
+  }, [search.jumpNonce]);
+
   React.useLayoutEffect(() => {
     const element = scrollRef.current;
     const thread = threadRef.current;
@@ -177,7 +218,7 @@ export function Conversation({
     }
     const pending = restoreRef.current;
 
-    if (stickToBottom) {
+    if (stickToBottom && !jumpRef.current) {
       const maxScroll = Math.max(0, element.scrollHeight - element.clientHeight);
       if (settings.autoScroll) {
         setScrollTop(element, maxScroll);
@@ -225,10 +266,22 @@ export function Conversation({
           element.scrollTop += delta;
           programmaticRef.current = element.scrollTop;
         }
+        if (jumpRef.current) {
+          // The scroll event of a programmatic jump is swallowed, so App would
+          // keep auto-scrolling to the bottom without this explicit report. A
+          // hit already near the bottom keeps following the stream.
+          jumpRef.current = false;
+          const distance = Math.max(
+            0,
+            Math.round(element.scrollHeight - element.scrollTop - element.clientHeight),
+          );
+          onScrollChange(element.scrollTop, distance < AT_BOTTOM_EDGE, distance);
+          setShowJump(distance > JUMP_EDGE);
+        }
       }
     }
 
-    if (thread && !restoreRef.current) {
+    if (thread && !restoreRef.current && !jumpRef.current) {
       anchorRef.current = captureAnchor(element, thread);
     }
 
@@ -242,6 +295,43 @@ export function Conversation({
       fillRef.current = messages.length;
       onLoadOlder();
     }
+  });
+
+  // Runs after every commit: streaming text, the virtual window and the active
+  // hit all change the DOM. Cleanup drops the registries on close and unmount.
+  React.useLayoutEffect(() => {
+    const active = applyHighlights(
+      threadRef.current,
+      search.open ? search.hits : [],
+      search.current,
+      search.open ? search.query : '',
+    );
+    // The message anchor puts the message top on screen; a long message still
+    // needs the match itself scrolled into view. The scroll event is swallowed
+    // by `programmaticRef`, so the new position is reported here.
+    if (active && rangeJumpRef.current) {
+      rangeJumpRef.current = false;
+      const element = scrollRef.current;
+      if (element) {
+        const delta = rangeScrollDelta(element, active);
+        if (Math.abs(delta) >= 1) {
+          element.scrollTop += delta;
+          programmaticRef.current = element.scrollTop;
+          anchorRef.current = threadRef.current
+            ? captureAnchor(element, threadRef.current)
+            : null;
+          const distance = Math.max(
+            0,
+            Math.round(element.scrollHeight - element.scrollTop - element.clientHeight),
+          );
+          // Same rule as the message alignment: a hit near the bottom keeps
+          // following the stream, a hit further up stops auto-scroll.
+          onScrollChange(element.scrollTop, distance < AT_BOTTOM_EDGE, distance);
+          setShowJump(distance > JUMP_EDGE);
+        }
+      }
+    }
+    return clearHighlights;
   });
 
   const onScroll = () => {
@@ -262,6 +352,8 @@ export function Conversation({
       Math.round(element.scrollHeight - element.scrollTop - element.clientHeight),
     );
     const atBottom = distance < AT_BOTTOM_EDGE;
+    jumpRef.current = false;
+    rangeJumpRef.current = false;
     if (restoreRef.current) {
       setRestore(null);
     }
@@ -279,6 +371,8 @@ export function Conversation({
       return;
     }
     anchorRef.current = null;
+    jumpRef.current = false;
+    rangeJumpRef.current = false;
     setScrollTop(element, element.scrollHeight);
     onScrollChange(element.scrollTop, true, 0);
     setShowJump(false);
@@ -522,6 +616,68 @@ function findItem(thread: HTMLElement, id: string): HTMLElement | null {
     }
   }
   return null;
+}
+
+/** Air above and below the active match when it is scrolled into view. */
+const RANGE_PADDING = 28;
+
+interface RevealTarget {
+  readonly id: string;
+  readonly fallback: boolean;
+}
+
+/**
+ * Collapsed reasoning and tool bodies have no DOM region, so their hits cannot
+ * be highlighted or scrolled to. A jump opens the body the hit lives in; name
+ * and title hits already sit in the always-rendered card head.
+ */
+function revealTarget(
+  hit: SearchHit,
+  messages: readonly UiMessage[],
+  settings: SidekickSettings,
+): RevealTarget | null {
+  if (hit.region === 'user') {
+    return null;
+  }
+  const [indexText, field] = hit.region.split(':');
+  const index = Number(indexText);
+  if (!Number.isInteger(index) || index < 0) {
+    return null;
+  }
+  const part = messages.find((message) => message.id === hit.messageId)?.parts[index];
+  if (!part) {
+    return null;
+  }
+  if (field === 'input' || field === 'output') {
+    return part.kind === 'tool'
+      ? { id: `${hit.messageId}:${index}`, fallback: !settings.compactTools }
+      : null;
+  }
+  if (field !== undefined) {
+    return null;
+  }
+  return part.kind === 'reasoning'
+    ? { id: `${hit.messageId}:${index}`, fallback: settings.reasoning === 'expanded' }
+    : null;
+}
+
+/**
+ * Delta that brings the active match into the transcript viewport. Zero means
+ * it is already visible with the padding around it.
+ */
+function rangeScrollDelta(scroll: HTMLElement, range: Range): number {
+  const rect = range.getBoundingClientRect();
+  if (rect.width === 0 && rect.height === 0) {
+    return 0;
+  }
+  const origin = scroll.getBoundingClientRect().top;
+  const top = rect.top - origin;
+  const bottom = rect.bottom - origin;
+  if (top < RANGE_PADDING) {
+    return top - RANGE_PADDING;
+  }
+  const limit = scroll.clientHeight - RANGE_PADDING;
+  return bottom > limit ? bottom - limit : 0;
 }
 
 /**

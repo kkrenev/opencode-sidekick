@@ -32,6 +32,7 @@ OpenCode Sidekick declares its own container in `secondarySidebar`, so OpenCode 
 - **Per-tab state.** Each tab keeps its draft, caret, scroll position, and expanded blocks, so switching chats does not lose what you were writing or reading.
 - **One chat per folder.** In a multi-root workspace the header shows a folder picker: each folder has its own tabs, active session, agent, model, commands, skills and file search, and a new chat draft is remembered per folder.
 - **Long chats stay fast.** The transcript loads the newest page first and pages in older messages as you scroll up, keeps a constant number of rendered messages and a `Jump to latest` button, and refreshes only the tail while the agent works.
+- **Find in the chat.** `Cmd/Ctrl+F` opens a find bar over the transcript: `N/M` with `Enter` / `Shift+Enter` (or the arrows) to cycle, and matches in messages, reasoning and tool names or titles are highlighted. A jump opens a collapsed reasoning block or tool body it lands in and scrolls the match itself into view; `Escape` closes it and clears the highlight, and tool input and output are searchable behind an off-by-default **Output** toggle.
 - **Session history.** Grouped by Today / Yesterday / Previous 7 days / Older, with search, one-click switching and delete.
 - **New sessions in one click.** The `+` button in the header, or `Cmd+Alt+N`.
 - **Searchable model picker.** Filter the server's model list by name, id or provider, then switch without leaving the composer.
@@ -77,6 +78,8 @@ The same chat can sit beside your code: `OpenCode: Open Chat in Editor Tab`, or 
 In a multi-root workspace the folder picker in the header switches the panel to another folder. Until you pick one by hand (and while a turn is still running) the panel follows the folder of the active editor. The OpenCode terminal and the `@` file search use the selected folder too.
 
 The composer footer has three pickers: model, effort and mode. Type `/` at the start of a message to filter commands, or `@` anywhere to search files and skills. In a palette, use `Up` / `Down` to move, `Enter` or `Tab` to select, and `Escape` to close it. The `...` menu in the header repeats the main panel actions, including the three pickers.
+
+Press `Cmd/Ctrl+F` to search the open chat. The find bar sits between the header and the transcript, so it never covers the composer: type to see `N/M`, use `Enter` / `Shift+Enter` or the arrows to move between matches, and `Escape` to close it and drop the highlight. Jumping to a match opens the collapsed block it lives in and brings the match into view. The query is kept when you close the bar and cleared when you switch sessions; tool input and output are only searched after you turn on **Output**.
 
 ## Commands
 

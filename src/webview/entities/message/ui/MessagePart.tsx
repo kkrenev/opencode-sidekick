@@ -30,12 +30,23 @@ export function MessagePart({
   if (part.kind === 'text') {
     if (streaming) {
       return (
-        <div className="prose streaming" style={{ whiteSpace: 'pre-wrap' }}>
+        <div
+          className="prose streaming"
+          style={{ whiteSpace: 'pre-wrap' }}
+          data-search-region={partId}
+        >
           {part.text}
         </div>
       );
     }
-    return <MarkdownContent text={part.text} onCopy={onCopy} onOpenExternal={onOpenExternal} />;
+    return (
+      <MarkdownContent
+        text={part.text}
+        searchKey={partId}
+        onCopy={onCopy}
+        onOpenExternal={onOpenExternal}
+      />
+    );
   }
 
   if (part.kind === 'reasoning') {

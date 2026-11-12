@@ -27,7 +27,11 @@ export function ReasoningBlock({
         <Icon name="chevron" className="chev" />
         <span>{label}</span>
       </button>
-      {isOpen ? <div className="thought-body">{text}</div> : null}
+      {isOpen ? (
+        <div className="thought-body" data-search-region={partId}>
+          {text}
+        </div>
+      ) : null}
     </div>
   );
 }

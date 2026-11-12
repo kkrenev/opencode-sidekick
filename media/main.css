@@ -441,6 +441,122 @@ select:focus-visible {
   height: 15px;
 }
 
+/* Chat search */
+
+.chat-search {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--vscode-sideBar-background) 92%, transparent);
+}
+
+.chat-search > .icon {
+  width: 14px;
+  height: 14px;
+  color: var(--dim);
+  flex: none;
+}
+
+.chat-search-input {
+  flex: 1 1 60px;
+  min-width: 0;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--vscode-input-foreground, var(--vscode-foreground));
+  font: inherit;
+  font-size: 12px;
+}
+
+.chat-search-input::placeholder {
+  color: var(--dim);
+}
+
+.chat-search-count {
+  flex: none;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.chat-search-btn {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: var(--muted);
+  flex: none;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.chat-search-btn:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--vscode-foreground);
+}
+
+.chat-search-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.chat-search-btn .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.chat-search-btn.prev .icon {
+  transform: rotate(180deg);
+}
+
+.chat-search-toggle {
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  flex: none;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.chat-search-toggle:hover {
+  background: var(--surface-2);
+  color: var(--vscode-foreground);
+}
+
+.chat-search-toggle[aria-pressed='true'] {
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: color-mix(in srgb, var(--accent) 82%, var(--vscode-foreground));
+}
+
+.chat-search-hint {
+  flex: 1 1 100%;
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+::highlight(chat-search) {
+  background-color: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+::highlight(chat-search-active) {
+  background-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  color: var(--vscode-editor-foreground, var(--vscode-foreground));
+}
+
 /* Transcript */
 
 .conversation {

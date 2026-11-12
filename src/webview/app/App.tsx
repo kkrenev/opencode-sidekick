@@ -2,6 +2,7 @@ import * as React from 'react';
 import { chipAnchor } from './model/chipAnchor';
 import { useAttachments } from './model/useAttachments';
 import { useChatActions } from './model/useChatActions';
+import { useChatSearch } from './model/useChatSearch';
 import { useComposerPalette } from './model/useComposerPalette';
 import { useLocalActions } from './model/useLocalActions';
 import { useSidekickData } from './model/useSidekickData';
@@ -13,6 +14,7 @@ import { effortText, modelName } from '../entities/model/lib/model';
 import { AppMenu } from '../features/app-menu/ui/AppMenu';
 import { AttachMenu } from '../features/attach-menu/ui/AttachMenu';
 import type { AttachAction } from '../features/attach-menu/lib/attachments';
+import { ChatSearch } from '../features/chat-search/ui/ChatSearch';
 import { ComposerPalette } from '../features/composer-palette/ui/ComposerPalette';
 import { EffortPicker } from '../features/effort-picker/ui/EffortPicker';
 import { MessageMenu } from '../features/message-menu/ui/MessageMenu';
@@ -88,6 +90,19 @@ export function App(): React.ReactElement {
     attachments,
     inputRef,
     runLocalAction,
+  });
+  const dismissPopover = React.useCallback(() => {
+    ui.setPopover(null);
+    // The composer palette is a separate overlay; Cmd/Ctrl+F owns the keyboard.
+    palette.closePalette();
+  }, [ui.setPopover, palette.closePalette]);
+  const search = useChatSearch({
+    messages: data.messages,
+    sessionId: data.session?.id,
+    settings: data.settings,
+    // Settings and history keep the native find shortcut for themselves.
+    blocked: ui.settingsOpen || ui.historyOpen,
+    dismissPopover,
   });
 
   React.useEffect(() => {
@@ -235,6 +250,26 @@ export function App(): React.ReactElement {
         onRenameCancel={ui.cancelRename}
       />
 
+      {search.open ? (
+        <ChatSearch
+          query={search.query}
+          current={search.current}
+          total={search.hits.length}
+          truncated={search.truncated}
+          includeOutput={search.includeOutput}
+          focusNonce={search.focusNonce}
+          onQuery={search.setQuery}
+          onNext={search.next}
+          onPrev={search.prev}
+          onClose={() => {
+            search.closeSearch();
+            // The bar unmounts, so hand the keyboard back to the composer.
+            focusComposer();
+          }}
+          onToggleOutput={search.toggleOutput}
+        />
+      ) : null}
+
       <Conversation
         connected={data.connected}
         error={data.error}
@@ -260,6 +295,7 @@ export function App(): React.ReactElement {
         }
         stickToBottom={session.stickToBottom}
         distanceFromBottom={session.distanceFromBottom}
+        search={search}
         onScrollChange={session.setScroll}
         onLoadOlder={() => post({ type: 'loadOlder' })}
         onCopy={(text) => {

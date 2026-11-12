@@ -3,10 +3,13 @@ import { renderMarkdown } from '../../../shared/lib/markdown';
 
 export function MarkdownContent({
   text,
+  searchKey,
   onCopy,
   onOpenExternal,
 }: {
   text: string;
+  /** Transcript search region this body belongs to. */
+  searchKey?: string;
   onCopy: (text: string) => void;
   onOpenExternal: (url: string) => void;
 }): React.ReactElement {
@@ -29,6 +32,7 @@ export function MarkdownContent({
   return (
     <div
       className="prose"
+      data-search-region={searchKey}
       onClick={handleClick}
       dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }}
     />

@@ -50,6 +50,8 @@ export interface UiNotice {
 export interface Snapshot {
   readonly connected: boolean;
   readonly error: string | null;
+  /** The send of this chat was rejected by an outage and can be repeated. */
+  readonly resendPending: boolean;
   readonly directory: string;
   readonly workspace: string;
   /** Every folder of the workspace, in VS Code order. */

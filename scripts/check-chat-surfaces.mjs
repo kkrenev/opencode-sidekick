@@ -143,7 +143,15 @@ check('a host-initiated attachment is broadcast, a reply is not', () => {
 });
 
 check('request-scoped frames answer only the surface that asked', () => {
-  for (const type of ['attachError', 'attachDone', 'sendRejected', 'files', 'imagePreview', 'queueEdit']) {
+  for (const type of [
+    'attachError',
+    'attachDone',
+    'sendAccepted',
+    'sendRejected',
+    'files',
+    'imagePreview',
+    'queueEdit',
+  ]) {
     assert.equal(frameScope({ type, requestId: 'r-1' }), 'initiator', type);
     assert.equal(frameScope({ type }), 'initiator', type);
   }

@@ -273,6 +273,7 @@ export function App(): React.ReactElement {
       <Conversation
         connected={data.connected}
         error={data.error}
+        resendPending={data.resendPending}
         sessionId={data.session?.id}
         messages={data.messages}
         history={data.history}
@@ -319,6 +320,7 @@ export function App(): React.ReactElement {
         }
         onSuggestion={actions.applySuggestion}
         onRetry={actions.retry}
+        onResend={actions.resend}
         onReviewTurn={(from) =>
           post({ type: 'reviewTurn', sessionID: data.session?.id, from })
         }

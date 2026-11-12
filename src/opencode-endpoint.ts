@@ -46,7 +46,7 @@ function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-async function readEndpoint(): Promise<OpenCodeEndpoint | undefined> {
+export async function readEndpoint(): Promise<OpenCodeEndpoint | undefined> {
   try {
     const raw = await fs.readFile(serviceFilePath(), 'utf8');
     const file = JSON.parse(raw) as ServiceFile;
@@ -62,9 +62,17 @@ async function readEndpoint(): Promise<OpenCodeEndpoint | undefined> {
   }
 }
 
-async function isReachable(endpoint: OpenCodeEndpoint): Promise<boolean> {
+/**
+ * `GET /api/info` is the health check: a dropped event stream on a live server
+ * is transient and must not raise the banner. The timeout keeps a hung server
+ * from blocking the answer.
+ */
+export async function probeEndpoint(
+  endpoint: OpenCodeEndpoint,
+  timeoutMs = HEALTH_TIMEOUT_MS,
+): Promise<boolean> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(new URL('/api/info', endpoint.url), {
       headers: { authorization: `Basic ${endpoint.credential}` },
@@ -118,7 +126,7 @@ async function waitForEndpoint(): Promise<OpenCodeEndpoint | undefined> {
   const deadline = Date.now() + START_TIMEOUT_MS;
   while (Date.now() < deadline) {
     const endpoint = await readEndpoint();
-    if (endpoint && (await isReachable(endpoint))) {
+    if (endpoint && (await probeEndpoint(endpoint))) {
       return endpoint;
     }
     await delay(POLL_INTERVAL_MS);
@@ -128,7 +136,7 @@ async function waitForEndpoint(): Promise<OpenCodeEndpoint | undefined> {
 
 export async function connect(): Promise<OpenCodeEndpoint> {
   const existing = await readEndpoint();
-  if (existing && (await isReachable(existing))) {
+  if (existing && (await probeEndpoint(existing))) {
     return existing;
   }
 

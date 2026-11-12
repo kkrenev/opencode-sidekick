@@ -57,6 +57,18 @@ export function useChatActions({
         window.requestAnimationFrame(() => inputRef.current?.focus());
         return;
       }
+      if (message.type === 'sendAccepted') {
+        // The host confirmed the repeated send, so the draft and the chips it
+        // put back must not stay: the next Send would send them a second time.
+        // Anything the user changed meanwhile is theirs and stays.
+        if (message.sessionID !== undefined && message.sessionID !== data.session?.id) {
+          return;
+        }
+        const text = typeof message.text === 'string' ? message.text : '';
+        session.setDraft((current) => (current.trim() === text ? '' : current));
+        attachments.consume(new Set((message.attachments ?? []).map((entry) => entry.uri)));
+        return;
+      }
       if (message.type !== 'sendRejected') {
         return;
       }
@@ -64,8 +76,15 @@ export function useChatActions({
         ui.showToast(message.message || 'The message was not sent.');
         return;
       }
+      // A repeated send must not overwrite the composer: the draft and the
+      // chips of the failed send are already here, and the user may have edited
+      // them since. An empty composer still takes the payload back, so a draft
+      // the user cleared before the repeat is not lost.
+      const resend = message.resend === true;
       const snapshot = lastSent.current;
-      lastSent.current = [];
+      if (!resend) {
+        lastSent.current = [];
+      }
       const restored = (message.attachments ?? []).map((entry) => {
         const known = snapshot.find((attachment) => attachment.uri === entry.uri);
         if (known) {
@@ -81,7 +100,12 @@ export function useChatActions({
         };
       });
       attachments.restore(restored.length > 0 ? restored : snapshot);
-      session.setDraft(typeof message.text === 'string' ? message.text : '');
+      const text = typeof message.text === 'string' ? message.text : '';
+      if (resend) {
+        session.setDraft((current) => (current.trim().length === 0 ? text : current));
+      } else {
+        session.setDraft(text);
+      }
       // Only a send that painted a local bubble may remove one; a queued send
       // never added a bubble, so the previous message must stay untouched.
       const hadOptimistic = optimistic.current;
@@ -105,6 +129,7 @@ export function useChatActions({
       ui.showToast(message.message || 'The message was not sent.');
     });
   }, [
+    attachments.consume,
     attachments.restore,
     data.session?.id,
     session.setDraft,
@@ -321,6 +346,7 @@ export function useChatActions({
     send,
     stop: () => post({ type: 'stop' }),
     retry: () => post({ type: 'refresh' }),
+    resend: () => post({ type: 'resend' }),
     onComposerKeyDown,
     pickModel,
     pickEffort,

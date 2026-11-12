@@ -31,7 +31,7 @@ import {
   SkillEntry,
   StreamEvent,
 } from './opencode-client';
-import { connect, OpenCodeEndpoint } from './opencode-endpoint';
+import { connect, OpenCodeEndpoint, probeEndpoint, readEndpoint } from './opencode-endpoint';
 import { resolveOpenSession } from './session-open';
 import {
   isSettingKey,
@@ -166,6 +166,8 @@ const ATTACHMENT_LIMIT_BYTES = 10 * 1024 * 1024;
 const ATTACHMENT_LIMIT_COUNT = 10;
 const ATTACHMENT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const SCREENSHOT_TIMEOUT_MS = 120_000;
+/** Pause between the two health probes of one stream outage. */
+const STREAM_PROBE_RETRY_MS = 1200;
 const SCREENSHOT_PASTE_HINT =
   'VS Code cannot capture or read images from the clipboard. Copy the screenshot, then press Ctrl+V in the OpenCode composer.';
 const IMAGE_DATA_URL = /^data:(image\/(?:png|jpe?g|gif|webp|bmp));base64,/i;
@@ -215,6 +217,18 @@ interface SurfaceReply {
 interface StoredPanelTarget {
   readonly sessionID: string;
   readonly directory: string;
+}
+
+/**
+ * A send the server never received because the connection dropped. The draft
+ * and the chips are back in the composer, and Resend repeats exactly this
+ * payload; it lives in memory, so a window reload drops it with the client.
+ */
+interface PendingSend {
+  readonly sessionID: string;
+  readonly text: string;
+  readonly attachments: readonly unknown[];
+  readonly delivery?: QueueDelivery;
 }
 
 /** v1 shapes, read once and migrated by `src/shared/workspace-folders.ts`. */
@@ -333,6 +347,12 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
   private loading = false;
   private busy = false;
   private lastError: string | undefined;
+  /** The send an outage rejected; Resend repeats it instead of the composer. */
+  private pendingSend: PendingSend | undefined;
+  /** A health probe of the current outage is in flight; one at a time. */
+  private probing = false;
+  /** Bumped on every stream reconnect, so a stale probe cannot raise a banner. */
+  private streamEpoch = 0;
   /** User message that started the current or last turn of a session. */
   private turnStarts = new Map<string, string>();
   /** User message id before the turn was sent; `null` when there was none. */
@@ -583,10 +603,13 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
   }
 
   browserUrl(): string | undefined {
-    if (!this.endpoint) {
+    // The client may have rotated to a restarted server; `this.endpoint` only
+    // mirrors it for the parts that do not hold the client.
+    const endpoint = this.client?.endpoint ?? this.endpoint;
+    if (!endpoint) {
       return undefined;
     }
-    return `${this.endpoint.url}/?auth_token=${encodeURIComponent(this.endpoint.credential)}`;
+    return `${endpoint.url}/?auth_token=${encodeURIComponent(endpoint.credential)}`;
   }
 
   async newSession(options: { autoContext?: boolean } = {}): Promise<void> {
@@ -1185,6 +1208,11 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
       return;
     }
     this.session = cached;
+    // A repeat offer belongs to the chat the send failed in: its draft is still
+    // in that chat's composer, and another chat must not repeat it.
+    if (this.pendingSend !== undefined && this.pendingSend.sessionID !== id) {
+      this.pendingSend = undefined;
+    }
     this.busy = this.tabRunning.has(id) || cached.running;
     // A dropped stream or an overflowed delta buffer leaves this tab behind the
     // server, so the flag has to be read before the notice is cleared.
@@ -1419,7 +1447,9 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
     void this.pruneAttachments();
     try {
       this.endpoint = await connect();
-      this.client = new OpenCodeClient(this.endpoint);
+      // The client re-reads `service.json` before every stream attempt, so a
+      // restarted server on a new port or password is picked up on its own.
+      this.client = new OpenCodeClient(this.endpoint, () => readEndpoint());
       this.lastError = undefined;
       this.stopStream?.();
       this.stopStream = this.client.subscribe(
@@ -1451,6 +1481,9 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
       await this.persistTabs();
       await this.loadPermissions();
       await this.loadQueue();
+      // A successful connect proves the panel talks to the server again, and
+      // the draft is still in the composer: nothing may keep offering Resend.
+      this.pendingSend = undefined;
       this.post({ type: 'state', state: this.snapshot() });
     } catch (error) {
       const firstFailure = this.lastError === undefined;
@@ -3091,6 +3124,10 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
     // The stream is live again: the banner goes away with the error that
     // raised it, and the snapshot reports the chat as connected.
     this.lastError = undefined;
+    this.streamEpoch += 1;
+    // The client already talks to the endpoint of this attempt; keep the copy
+    // the rest of the panel reads in sync with it.
+    this.endpoint = this.client.endpoint;
     const activeID = this.session?.id;
     for (const id of this.allTabIDs()) {
       if (id !== activeID) {
@@ -3103,6 +3140,9 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
     }
     void (async () => {
       await this.refreshTail(activeID);
+      // The stream is live again: the composer of the chat holds the draft of
+      // the failed send, so nothing may still offer to repeat it.
+      this.pendingSend = undefined;
       await this.loadPermissions(activeID);
       await this.loadQueue(activeID);
       await this.loadSessions();
@@ -3118,23 +3158,59 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
   }
 
   /**
-   * The event stream dropped while the panel is alive. The client is kept so
-   * requests still work, but the chat is not live: the snapshot goes offline
-   * (banner with Retry) and the outage is notified once, like a failed connect.
+   * The event stream dropped while the panel is alive. A drop alone is not an
+   * outage: `GET /api/info` decides. A live server is a transient drop that the
+   * retry loop fixes quietly; a dead one sets `lastError`, which is what puts
+   * the banner with Retry on screen, and notifies once per outage.
    */
   private onStreamError(error: unknown): void {
-    if (!this.client) {
+    const client = this.client;
+    if (!client || this.lastError !== undefined || this.probing) {
       return;
     }
-    const firstFailure = this.lastError === undefined;
-    this.lastError = error instanceof Error ? error.message : String(error);
-    if (!firstFailure) {
-      // The retry loop fails again every 1.5s: one state and one notification
-      // per outage is enough.
-      return;
-    }
-    this.post({ type: 'state', state: this.snapshot() });
-    this.maybeNotifyConnectionError();
+    const message = error instanceof Error ? error.message : String(error);
+    const epoch = this.streamEpoch;
+    this.probing = true;
+    void (async () => {
+      try {
+        // A single failed probe proves nothing: a restarted server refuses for
+        // a moment while the retry loop is already reconnecting. The banner is
+        // raised only when a second probe fails after a short pause, and never
+        // when the stream came back in the meantime.
+        if (await this.probeServer(client)) {
+          return;
+        }
+        if (this.outageIsOver(client, epoch)) {
+          return;
+        }
+        await pause(STREAM_PROBE_RETRY_MS);
+        if (this.outageIsOver(client, epoch)) {
+          return;
+        }
+        if (await this.probeServer(client)) {
+          return;
+        }
+        this.lastError = message;
+        this.post({ type: 'state', state: this.snapshot() });
+        this.maybeNotifyConnectionError();
+      } finally {
+        this.probing = false;
+      }
+    })();
+  }
+
+  /** True once the outage this probe was started for no longer exists. */
+  private outageIsOver(client: OpenCodeClient, epoch: number): boolean {
+    return this.client !== client || this.streamEpoch !== epoch || this.lastError !== undefined;
+  }
+
+  /** `GET /api/info` of the endpoint the client would use right now. */
+  private async probeServer(client: OpenCodeClient): Promise<boolean> {
+    // The server may have restarted on another port or password: ask the
+    // rewritten `service.json` first, then the endpoint the client holds.
+    const fresh = (await readEndpoint().catch(() => undefined)) ?? client.endpoint;
+    // A probe that fails for any reason counts as a dead server.
+    return probeEndpoint(fresh).catch(() => false);
   }
 
   private scheduleSessionTail(sessionID: string, computeDiff = false): void {
@@ -3723,18 +3799,278 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
     attachments: readonly unknown[],
     message: string,
     sessionID: string | undefined,
+    options: { readonly resend?: boolean } = {},
   ): void {
     reply.send({
       type: 'sendRejected',
       message,
       text,
       attachments,
+      // A repeat puts nothing back: the composer already holds the draft and
+      // the chips of the failed send, and the user may have edited them since.
+      ...(options.resend === true ? { resend: true } : {}),
       // A queued send that failed leaves the running turn untouched, so the
       // webview must not drop its busy state with the optimistic bubble.
       busy: this.busy,
       ...(sessionID === undefined ? {} : { sessionID }),
     });
     this.post({ type: 'state', state: this.snapshot() });
+  }
+
+  /**
+   * One send of the composer: a queued prompt, a slash command, or a prompt
+   * that starts a turn. `resend` repeats the payload of a rejected send, so it
+   * must not put anything back into the composer.
+   */
+  private async sendMessage(
+    reply: SurfaceReply,
+    message: { readonly type: string; readonly [key: string]: unknown },
+    options: { readonly resend?: boolean } = {},
+  ): Promise<void> {
+    const text = typeof message.text === 'string' ? message.text.trim() : '';
+    const requested = Array.isArray(message.attachments) ? message.attachments : [];
+    // A new attempt replaces whatever an earlier outage left for Resend.
+    this.pendingSend = undefined;
+    if (text.length === 0 && requested.length === 0) {
+      return;
+    }
+    if (!this.client) {
+      // The webview cleared the composer when it sent, so returning here would
+      // lose the prompt. Give the draft and the chips back, and keep the payload
+      // so Resend can repeat it once the panel reconnects.
+      this.pendingSend =
+        this.session === undefined
+          ? undefined
+          : { sessionID: this.session.id, text, attachments: requested };
+      this.postSendRejected(
+        reply,
+        text,
+        requested,
+        'OpenCode is not reachable. Reconnect, then send again.',
+        this.session?.id,
+        options,
+      );
+      return;
+    }
+    const command = this.matchCommand(text);
+    const blocked = this.session ? this.revertInputBlock(this.session.id) : undefined;
+    if (blocked) {
+      // Sending now would make the server commit the staged revert.
+      this.postSendRejected(reply, text, requested, blocked, this.session?.id, options);
+      return;
+    }
+    let explicit: ContextFileAttachment[];
+    try {
+      explicit = await this.collectAttachments(requested);
+    } catch (error) {
+      // A missing or oversized chip rejects the whole send: the draft and
+      // every chip come back so the user can fix the tray.
+      this.postSendRejected(
+        reply,
+        text,
+        requested,
+        describeError(error),
+        this.session?.id,
+        options,
+      );
+      return;
+    }
+    if (command && explicit.length > 0) {
+      this.postSendRejected(
+        reply,
+        text,
+        requested,
+        'Attachments are not sent with slash commands. Remove them or drop the command.',
+        this.session?.id,
+        options,
+      );
+      return;
+    }
+    if (text.length === 0 && explicit.length === 0) {
+      this.postSendRejected(
+        reply,
+        text,
+        requested,
+        'No attachments could be sent.',
+        this.session?.id,
+        options,
+      );
+      return;
+    }
+    if (!this.session) {
+      // The prompt is composed for this send; do not re-add the auto chip.
+      await this.newSession({ autoContext: false });
+    }
+    if (!this.session) {
+      return;
+    }
+    // A steering message of a running turn must not move the boundary: the
+    // turn still starts at the first user message after the previous one,
+    // which is exactly what `turnRefs` treats as one turn.
+    const running = this.tabRunning.has(this.session.id) || this.busy;
+    const requestedDelivery: QueueDelivery | undefined =
+      message.delivery === 'queue'
+        ? 'queue'
+        : message.delivery === 'steer'
+          ? 'steer'
+          : undefined;
+    // Queueing leaves the turn untouched: no local bubble, no busy flag and
+    // no turn baseline, so the running turn keeps its diff boundary.
+    if (running && requestedDelivery === 'queue' && !command) {
+      try {
+        const prompt = await this.composePrompt(text, explicit);
+        await this.client.prompt(
+          this.session.id,
+          prompt.text,
+          { ...prompt.attachments, files: prompt.files },
+          { delivery: 'queue' },
+        );
+        await this.loadQueue(this.session.id);
+        // The queued prompt reached the server, so the outage is over.
+        this.lastError = undefined;
+        this.post({ type: 'state', state: this.snapshot() });
+        if (options.resend === true) {
+          // The repeat succeeded, so the composer must drop the draft and the
+          // chips it kept for the failed send — exactly like an idle resend.
+          reply.send({
+            type: 'sendAccepted',
+            text,
+            attachments: requested,
+            sessionID: this.session.id,
+          });
+        }
+      } catch (error) {
+        // The prompt never left the server: give the draft and attachments
+        // back, and keep `busy` as it is for the running turn.
+        if (!(error instanceof OpenCodeHttpError)) {
+          // A queue that never reached the server can be repeated: Resend
+          // reuses the delivery the composer asked for.
+          this.pendingSend = {
+            sessionID: this.session.id,
+            text,
+            attachments: requested,
+            delivery: 'queue',
+          };
+        }
+        this.postSendRejected(
+          reply,
+          text,
+          requested,
+          error instanceof Error && error.message.length > 0
+            ? error.message
+            : 'The message was not sent.',
+          this.session.id,
+          options,
+        );
+      }
+      return;
+    }
+    if (!running) {
+      // A slash command starts a turn without adding a user message; the
+      // baseline lets the terminal handler skip that turn instead of diffing
+      // the previous user message again.
+      this.turnBaselines.set(
+        this.session.id,
+        lastUserMessageID(this.transcripts.get(this.session.id)?.messages) ?? null,
+      );
+    }
+    this.busy = true;
+    this.post({ type: 'busy', busy: true });
+    try {
+      if (command) {
+        const attachments = await this.parseAttachments(command.args);
+        await this.client.command(this.session.id, command.name, command.args, attachments);
+      } else {
+        const prompt = await this.composePrompt(text, explicit);
+        // A message sent into a running turn steers it; an idle send keeps
+        // the server default so its body stays exactly as before.
+        await this.client.prompt(
+          this.session.id,
+          prompt.text,
+          { ...prompt.attachments, files: prompt.files },
+          running ? { delivery: 'steer' } : {},
+        );
+      }
+      // The server accepted the send, so the panel is talking to it again: the
+      // banner left by the outage must not stay over a working chat.
+      this.lastError = undefined;
+      await this.refreshSession();
+      await this.loadMessages();
+      await this.loadQueue(this.session.id);
+      this.post({ type: 'state', state: this.snapshot() });
+      this.post({ type: 'messages', messages: this.activeMessages() });
+      if (options.resend === true) {
+        // The composer still holds the draft and the chips of the failed send;
+        // the webview clears them where the user has not touched them.
+        reply.send({
+          type: 'sendAccepted',
+          text,
+          attachments: requested,
+          sessionID: this.session.id,
+        });
+      }
+      this.scheduleRefresh();
+    } catch (error) {
+      this.busy = false;
+      this.post({ type: 'busy', busy: false });
+      const reason =
+        error instanceof Error && error.message.length > 0
+          ? error.message
+          : 'The message was not sent.';
+      // A request the server answered (409, 404, 500) must not be repeated:
+      // Resend is for a send that never left the panel.
+      if (!(error instanceof OpenCodeHttpError)) {
+        this.pendingSend = {
+          sessionID: this.session.id,
+          text,
+          attachments: requested,
+          ...(running ? { delivery: 'steer' as QueueDelivery } : {}),
+        };
+      }
+      this.postSendRejected(reply, text, requested, reason, this.session.id, options);
+    }
+  }
+
+  /**
+   * Repeats the send an outage rejected. It uses the payload the composer had,
+   * not the current draft: the user may have edited the text since.
+   */
+  private async resendPending(reply: SurfaceReply): Promise<void> {
+    const pending = this.pendingSend;
+    if (!pending) {
+      return;
+    }
+    // Claim the offer before the first await: a reconnect takes a moment, and a
+    // second click in that window must not repeat the same send twice.
+    this.pendingSend = undefined;
+    if (!this.client || this.lastError !== undefined) {
+      // The outage took the stream, the client, or both: reconnect exactly like
+      // Retry does, then send, instead of pushing a prompt into a dead socket.
+      await this.reload();
+    }
+    if (!this.client) {
+      // The reconnect failed too: the send is still unclaimed, so keep the
+      // offer for the next attempt.
+      this.pendingSend = pending;
+      this.post({ type: 'state', state: this.snapshot() });
+      return;
+    }
+    if (this.session?.id !== pending.sessionID) {
+      // The chat is gone or the user moved on; the draft stays in the composer,
+      // so there is nothing to repeat from here.
+      this.post({ type: 'state', state: this.snapshot() });
+      return;
+    }
+    await this.sendMessage(
+      reply,
+      {
+        type: 'send',
+        text: pending.text,
+        attachments: pending.attachments,
+        ...(pending.delivery === undefined ? {} : { delivery: pending.delivery }),
+      },
+      { resend: true },
+    );
   }
 
   private async attachFiles(reply: SurfaceReply, requestId: string): Promise<void> {
@@ -4716,6 +5052,11 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
         );
         this.openTab(payload.session, this.activeDirectory, payload.revertEpoch);
         this.session = payload.session;
+        // The chat on screen changed: a repeat offer of another chat stays out
+        // of this one, whose composer has its own draft.
+        if (this.pendingSend !== undefined && this.pendingSend.sessionID !== id) {
+          this.pendingSend = undefined;
+        }
         this.busy = this.tabRunning.has(id) || payload.session.running;
         this.clearTabNotice(id);
         await this.persistSession(id);
@@ -4785,129 +5126,11 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
         return;
       }
       case 'send': {
-        const text = typeof message.text === 'string' ? message.text.trim() : '';
-        const requested = Array.isArray(message.attachments) ? message.attachments : [];
-        if ((text.length === 0 && requested.length === 0) || !this.client) {
-          return;
-        }
-        const command = this.matchCommand(text);
-        const blocked = this.session ? this.revertInputBlock(this.session.id) : undefined;
-        if (blocked) {
-          // Sending now would make the server commit the staged revert.
-          this.postSendRejected(reply, text, requested, blocked, this.session?.id);
-          return;
-        }
-        let explicit: ContextFileAttachment[];
-        try {
-          explicit = await this.collectAttachments(requested);
-        } catch (error) {
-          // A missing or oversized chip rejects the whole send: the draft and
-          // every chip come back so the user can fix the tray.
-          this.postSendRejected(reply, text, requested, describeError(error), this.session?.id);
-          return;
-        }
-        if (command && explicit.length > 0) {
-          this.postSendRejected(
-            reply,
-            text,
-            requested,
-            'Attachments are not sent with slash commands. Remove them or drop the command.',
-            this.session?.id,
-          );
-          return;
-        }
-        if (text.length === 0 && explicit.length === 0) {
-          this.postSendRejected(
-            reply,
-            text,
-            requested,
-            'No attachments could be sent.',
-            this.session?.id,
-          );
-          return;
-        }
-        if (!this.session) {
-          // The prompt is composed for this send; do not re-add the auto chip.
-          await this.newSession({ autoContext: false });
-        }
-        if (!this.session) {
-          return;
-        }
-        // A steering message of a running turn must not move the boundary: the
-        // turn still starts at the first user message after the previous one,
-        // which is exactly what `turnRefs` treats as one turn.
-        const running = this.tabRunning.has(this.session.id) || this.busy;
-        const requestedDelivery: QueueDelivery | undefined =
-          message.delivery === 'queue'
-            ? 'queue'
-            : message.delivery === 'steer'
-              ? 'steer'
-              : undefined;
-        // Queueing leaves the turn untouched: no local bubble, no busy flag and
-        // no turn baseline, so the running turn keeps its diff boundary.
-        if (running && requestedDelivery === 'queue' && !command) {
-          try {
-            const prompt = await this.composePrompt(text, explicit);
-            await this.client.prompt(
-              this.session.id,
-              prompt.text,
-              { ...prompt.attachments, files: prompt.files },
-              { delivery: 'queue' },
-            );
-            await this.loadQueue(this.session.id);
-            this.post({ type: 'state', state: this.snapshot() });
-          } catch (error) {
-            // The prompt never left the server: give the draft and attachments
-            // back, and keep `busy` as it is for the running turn.
-            this.postSendRejected(
-              reply,
-              text,
-              requested,
-              error instanceof Error && error.message.length > 0
-                ? error.message
-                : 'The message was not sent.',
-              this.session.id,
-            );
-          }
-          return;
-        }
-        if (!running) {
-          // A slash command starts a turn without adding a user message; the
-          // baseline lets the terminal handler skip that turn instead of diffing
-          // the previous user message again.
-          this.turnBaselines.set(
-            this.session.id,
-            lastUserMessageID(this.transcripts.get(this.session.id)?.messages) ?? null,
-          );
-        }
-        this.busy = true;
-        this.post({ type: 'busy', busy: true });
-        try {
-          if (command) {
-            const attachments = await this.parseAttachments(command.args);
-            await this.client.command(this.session.id, command.name, command.args, attachments);
-          } else {
-            const prompt = await this.composePrompt(text, explicit);
-            // A message sent into a running turn steers it; an idle send keeps
-            // the server default so its body stays exactly as before.
-            await this.client.prompt(
-              this.session.id,
-              prompt.text,
-              { ...prompt.attachments, files: prompt.files },
-              running ? { delivery: 'steer' } : {},
-            );
-          }
-          await this.refreshSession();
-          await this.loadMessages();
-          await this.loadQueue(this.session.id);
-          this.post({ type: 'state', state: this.snapshot() });
-          this.post({ type: 'messages', messages: this.activeMessages() });
-          this.scheduleRefresh();
-        } catch (error) {
-          this.busy = false;
-          this.post({ type: 'busy', busy: false });
-          this.fail(error);
-        }
+        await this.sendMessage(reply, message);
+        return;
+      }
+      case 'resend': {
+        await this.resendPending(reply);
         return;
       }
       case 'queueSteer': {
@@ -5243,6 +5466,10 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
     return {
       connected: this.client !== undefined && this.lastError === undefined,
       error: this.lastError,
+      // Resend belongs to the chat on screen: another tab's rejected send must
+      // not offer itself in this chat's banner.
+      resendPending:
+        this.pendingSend !== undefined && this.pendingSend.sessionID === this.session?.id,
       directory: this.activeDirectory,
       workspace:
         folders.find((folder) => folder.directory === this.activeDirectory)?.name ??
@@ -5676,6 +5903,11 @@ function severityName(severity: vscode.DiagnosticSeverity): ProblemItem['severit
 function describeError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return message.length > 0 ? message : 'Could not attach that file.';
+}
+
+/** Resolves after `ms`; used to space two health probes of one outage. */
+function pause(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /** Text of a structured stream error payload (`{ message }`). */

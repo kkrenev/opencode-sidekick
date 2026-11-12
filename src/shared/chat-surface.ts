@@ -90,9 +90,9 @@ export type FrameScope = 'broadcast' | 'active' | 'initiator';
  * - `active`: a frame that changes what one user is looking at right now (the
  *   composer focus, a toast) belongs to the surface they last interacted with.
  * - `initiator`: a frame that answers one request (attachments, an image
- *   preview, a rejected send, a file or session search, a queue edit) must
- *   never reach another surface, where the request id means nothing, the
- *   `previewUri` belongs to another webview and the draft would change.
+ *   preview, a rejected or accepted send, a file or session search, a queue
+ *   edit) must never reach another surface, where the request id means nothing,
+ *   the `previewUri` belongs to another webview and the draft would change.
  */
 export function frameScope(frame: { type?: unknown; requestId?: unknown }): FrameScope {
   const type = typeof frame.type === 'string' ? frame.type : '';
@@ -104,6 +104,7 @@ export function frameScope(frame: { type?: unknown; requestId?: unknown }): Fram
       return requestScoped ? 'initiator' : 'broadcast';
     case 'attachError':
     case 'attachDone':
+    case 'sendAccepted':
     case 'sendRejected':
     case 'files':
     case 'imagePreview':

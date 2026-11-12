@@ -37,6 +37,8 @@ export interface IncomingMessage {
   }[];
   /** Short message for the `toast` and `error` frames. */
   readonly text?: string;
+  /** A `sendRejected` of a repeated send: the composer keeps what it holds. */
+  readonly resend?: boolean;
   readonly sessionID?: string;
   readonly directory?: string;
 }

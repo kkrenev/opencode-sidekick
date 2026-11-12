@@ -1,5 +1,6 @@
 import { OpenCodeEndpoint } from './opencode-endpoint';
 import { RawTokenCounts, readTokens, TokenBreakdown } from './shared/context-usage';
+import { createEventDeduper, reconnectDelay, STREAM_STABLE_MS } from './shared/reconnect';
 import {
   PermissionDecision,
   PermissionRequest,
@@ -213,6 +214,11 @@ export interface ListMessagesOptions {
 export interface StreamEvent {
   readonly type: string;
   readonly data?: Record<string, unknown>;
+  /** Envelope id of the frame; the server omits it on older builds. */
+  readonly id?: string;
+  readonly created?: number;
+  /** Durable position of the frame; not used as a high-water mark. */
+  readonly durable?: { readonly aggregateID?: string; readonly seq?: number };
 }
 
 interface Envelope<T> {
@@ -220,7 +226,23 @@ interface Envelope<T> {
 }
 
 export class OpenCodeClient {
-  constructor(private readonly endpoint: OpenCodeEndpoint) {}
+  private current: OpenCodeEndpoint;
+
+  /**
+   * `refreshEndpoint` is read at the start of every stream attempt, so a
+   * restarted server on a new port or with a new password is picked up without
+   * reloading the panel. Requests use the endpoint of the last attempt.
+   */
+  constructor(
+    endpoint: OpenCodeEndpoint,
+    private readonly refreshEndpoint?: () => Promise<OpenCodeEndpoint | undefined>,
+  ) {
+    this.current = endpoint;
+  }
+
+  get endpoint(): OpenCodeEndpoint {
+    return this.current;
+  }
 
   async listSessions(directory: string, search?: string): Promise<SessionSummary[]> {
     const query = new URLSearchParams({ directory, limit: '60' });
@@ -613,11 +635,22 @@ export class OpenCodeClient {
   ): Promise<void> {
     let opened = false;
     let reported = false;
+    // When the current attempt opened its stream; its age tells whether the
+    // drop that follows ends a healthy connection or the same outage.
+    let openedAt: number | undefined;
+    // Consecutive failed attempts. A frame proves the stream works again, so a
+    // long-lived connection never inherits the backoff of an old outage.
+    let attempts = 0;
+    // One deduper for the whole stream: it has to survive the reconnect.
+    const deduper = createEventDeduper();
     while (!signal.aborted) {
       try {
-        const response = await fetch(new URL('/api/event', this.endpoint.url), {
+        // A restarted server may listen on another port or use another
+        // password; `service.json` is re-read before every attempt.
+        await this.syncEndpoint();
+        const response = await fetch(new URL('/api/event', this.current.url), {
           headers: {
-            authorization: `Basic ${this.endpoint.credential}`,
+            authorization: `Basic ${this.current.credential}`,
             accept: 'text/event-stream',
           },
           signal,
@@ -632,7 +665,18 @@ export class OpenCodeClient {
         }
         opened = true;
         reported = false;
-        await readEventStream(response.body, onEvent, signal);
+        openedAt = Date.now();
+        await readEventStream(
+          response.body,
+          (event) => {
+            attempts = 0;
+            // A resubscribe replays the frames of the turn that was running.
+            if (deduper.isNew(event.id)) {
+              onEvent(event);
+            }
+          },
+          signal,
+        );
       } catch (error) {
         if (signal.aborted) {
           return;
@@ -640,20 +684,40 @@ export class OpenCodeClient {
         // A dropped stream is reported to the panel, which owns the banner and
         // the notification; the retry loop below keeps running on its own.
         reported = true;
+        attempts += 1;
         onError?.(error);
       }
       if (signal.aborted) {
         return;
       }
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // A stream that stayed open long enough was healthy even if the turn was
+      // idle and it carried no frame: the next drop starts a fresh backoff
+      // instead of inheriting the delays of an old outage.
+      if (openedAt !== undefined && Date.now() - openedAt >= STREAM_STABLE_MS) {
+        attempts = 0;
+      }
+      openedAt = undefined;
+      // The sleep is abort-aware: disposing the panel must not wait for the cap.
+      await sleep(reconnectDelay(attempts > 0 ? attempts - 1 : 0), signal);
+    }
+  }
+
+  /** Picks up a rewritten `service.json` without touching sessions or tabs. */
+  private async syncEndpoint(): Promise<void> {
+    if (!this.refreshEndpoint) {
+      return;
+    }
+    const next = await this.refreshEndpoint().catch(() => undefined);
+    if (next && (next.url !== this.current.url || next.credential !== this.current.credential)) {
+      this.current = next;
     }
   }
 
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
-    const response = await fetch(new URL(path, this.endpoint.url), {
+    const response = await fetch(new URL(path, this.current.url), {
       ...init,
       headers: {
-        authorization: `Basic ${this.endpoint.credential}`,
+        authorization: `Basic ${this.current.credential}`,
         'content-type': 'application/json',
         ...(init?.headers ?? {}),
       },
@@ -709,6 +773,22 @@ function toSummary(info: RawSessionInfo): SessionSummary {
     tokens: info.tokens ? readTokens(info.tokens) : undefined,
     revert: readRevert(info.revert),
   };
+}
+
+/** Resolves after `ms`, or as soon as `signal` aborts. */
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    const finish = (): void => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, ms);
+    signal.addEventListener('abort', finish, { once: true });
+  });
 }
 
 async function readEventStream(

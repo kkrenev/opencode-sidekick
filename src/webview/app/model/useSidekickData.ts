@@ -7,6 +7,7 @@ import { applyDelta } from './applyDelta';
 const INITIAL_DATA: AppData = {
   connected: false,
   error: null,
+  resendPending: false,
   directory: '',
   workspace: '',
   folders: [],

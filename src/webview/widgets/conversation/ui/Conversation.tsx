@@ -46,6 +46,7 @@ export interface UndoRequest {
 export function Conversation({
   connected,
   error,
+  resendPending,
   sessionId,
   messages,
   history,
@@ -75,6 +76,7 @@ export function Conversation({
   onOpenTerminal,
   onSuggestion,
   onRetry,
+  onResend,
   onReviewTurn,
   onUndoTurn,
   onConfirmUndo,
@@ -85,6 +87,8 @@ export function Conversation({
 }: {
   connected: boolean;
   error: string | null;
+  /** The send of this chat was rejected by an outage and can be repeated. */
+  resendPending: boolean;
   sessionId: string | undefined;
   messages: readonly UiMessage[];
   history: HistoryState;
@@ -127,6 +131,7 @@ export function Conversation({
   onOpenTerminal: (path?: string) => void;
   onSuggestion: (text: string) => void;
   onRetry: () => void;
+  onResend: () => void;
   onReviewTurn: (from: string) => void;
   /** Opens the confirmation; it never touches the files by itself. */
   onUndoTurn: () => void;
@@ -426,7 +431,12 @@ export function Conversation({
           style={{ paddingTop: windowed.top, paddingBottom: Math.max(24, windowed.bottom) }}
         >
           {!connected ? (
-            <ConversationOffline error={error} onRetry={onRetry} />
+            <ConversationOffline
+              error={error}
+              canResend={resendPending}
+              onRetry={onRetry}
+              onResend={onResend}
+            />
           ) : (
             <>
               {messages.length === 0 ? (

@@ -294,6 +294,21 @@ export function useAttachments({
 
   const clear = React.useCallback(() => commit(key, NO_ATTACHMENTS), [commit, key]);
 
+  /** Drops the chips a confirmed send took, leaving the rest of the tray. */
+  const consume = React.useCallback(
+    (uris: ReadonlySet<string>) => {
+      if (uris.size === 0) {
+        return;
+      }
+      const existing = statesRef.current[key] ?? NO_ATTACHMENTS;
+      const kept = existing.filter((attachment) => !uris.has(attachment.uri));
+      if (kept.length !== existing.length) {
+        commit(key, kept);
+      }
+    },
+    [commit, key],
+  );
+
   const restore = React.useCallback(
     (items: readonly PendingAttachment[]) => {
       const existing = statesRef.current[key] ?? NO_ATTACHMENTS;
@@ -325,6 +340,7 @@ export function useAttachments({
     attachBlobs,
     remove,
     clear,
+    consume,
     restore,
   };
 }

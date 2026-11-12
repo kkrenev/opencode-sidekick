@@ -1438,6 +1438,29 @@ select:focus-visible {
   font-size: 11.5px;
 }
 
+.offline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Resend repeats a failed send; Retry stays the primary action of the banner. */
+.offline button.secondary {
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  color: var(--muted);
+}
+
+.offline button.secondary:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--vscode-foreground);
+}
+
+.offline button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 /* Composer */
 
 .composer-wrap {

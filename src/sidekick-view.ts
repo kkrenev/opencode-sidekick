@@ -60,6 +60,12 @@ import { TOOL_OUTPUT_MAX_CHARS } from './shared/tool-card';
 import type { SessionRuntimeState } from './shared/session-runtime';
 import { DELTA_BUFFER_LIMIT, DeltaChunk } from './shared/session-stream';
 import {
+  mergeWorkspaceSessions,
+  rankSessions,
+  type HistoryScope,
+  type SessionSource,
+} from './shared/session-search';
+import {
   attachmentFitsLimit,
   composeContextText,
   contextToken,
@@ -219,6 +225,12 @@ interface StoredPanelTarget {
   readonly directory: string;
 }
 
+/** One row of `OpenCode: Search Sessions`; the id and folder survive the label. */
+interface SessionPickItem extends vscode.QuickPickItem {
+  readonly sessionID: string;
+  readonly directory: string;
+}
+
 /**
  * A send the server never received because the connection dropped. The draft
  * and the chips are back in the composer, and Resend repeats exactly this
@@ -304,6 +316,14 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
   private sessionRefreshTimer: NodeJS.Timeout | undefined;
   private session: SessionSummary | undefined;
   private sessions: SessionSummary[] = [];
+  /** Which folders the history drawer searched; the drawer keeps it between opens. */
+  private historyScope: HistoryScope = 'folder';
+  /** Last workspace-wide drawer answer: a row outside the active folder is only here. */
+  private historySessions: SessionSummary[] = [];
+  /** Query of the last drawer search, repeated after a delete refreshes its list. */
+  private historyQuery = '';
+  /** Bumped on every history search so only the last answer reaches the drawer. */
+  private historyEpoch = 0;
   private folders: readonly vscode.WorkspaceFolder[] = [];
   private activeDirectory: string;
   private directoryPinned = false;
@@ -656,6 +676,176 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
     // Both surfaces can show the drawer, and a palette command may focus the
     // sidebar while the panel was the last surface touched.
     this.post({ type: 'openHistory' });
+  }
+
+  /**
+   * `OpenCode: Search Sessions`: a live QuickPick over the sessions of every
+   * workspace folder. Rows are ordered host-side (best title match, then the
+   * server recency of each folder), so `alwaysShow` keeps VS Code from
+   * re-sorting or dropping them; the query is debounced like the drawer's.
+   */
+  async searchSessions(): Promise<void> {
+    if (!this.client) {
+      // A fresh window resolves the panel and connects on its own, but the
+      // command may land first; a shared attempt keeps one event stream.
+      await this.connectAndLoad();
+    }
+    if (!this.client) {
+      void vscode.window.showWarningMessage('OpenCode Sidekick is not connected yet.');
+      return;
+    }
+    const placeholder = 'Search sessions in every workspace folder';
+    const names = new Map(this.folderRefs().map((folder) => [folder.directory, folder.name]));
+    const quickPick = vscode.window.createQuickPick<SessionPickItem>();
+    quickPick.title = 'Search Sessions';
+    quickPick.placeholder = placeholder;
+    quickPick.matchOnDescription = false;
+    quickPick.matchOnDetail = false;
+    quickPick.busy = true;
+    let epoch = 0;
+    let timer: NodeJS.Timeout | undefined;
+    let closed = false;
+
+    const apply = (
+      sessions: readonly SessionSummary[],
+      failed: number,
+      total: number,
+      error?: unknown,
+    ): void => {
+      if (closed) {
+        return;
+      }
+      quickPick.items = sessions.map((session) => ({
+        label: session.title.length > 0 ? session.title : 'Untitled session',
+        description: names.get(session.directory ?? '') ?? session.directory ?? '',
+        detail: `${sessionDate(session.updated)} · ${session.running ? 'Running' : 'Idle'}`,
+        // The host already ordered the list; VS Code must not filter it again.
+        alwaysShow: true,
+        sessionID: session.id,
+        directory: session.directory ?? '',
+      }));
+      quickPick.busy = false;
+      if (total > 0 && failed === total) {
+        const reason = error instanceof Error ? error.message : String(error ?? '');
+        quickPick.placeholder =
+          reason.length > 0 ? `Could not load sessions: ${reason}` : 'Could not load sessions';
+      } else {
+        // A later query that answered at least one folder is a working search
+        // again, so the error must not stay in the placeholder.
+        quickPick.placeholder = placeholder;
+      }
+    };
+
+    const load = async (query: string): Promise<void> => {
+      const current = ++epoch;
+      quickPick.busy = true;
+      const result = await this.workspaceSessions(query);
+      if (closed || current !== epoch) {
+        return;
+      }
+      apply(result.sessions, result.failed, result.total, result.error);
+    };
+
+    const disposables: vscode.Disposable[] = [];
+    disposables.push(
+      quickPick.onDidChangeValue((value) => {
+        if (timer) {
+          clearTimeout(timer);
+        }
+        timer = setTimeout(() => {
+          timer = undefined;
+          void load(value);
+        }, 200);
+      }),
+      quickPick.onDidAccept(() => {
+        const picked = quickPick.selectedItems[0];
+        quickPick.hide();
+        if (picked) {
+          void this.openSessionFromPalette(picked.directory, picked.sessionID);
+        }
+      }),
+      quickPick.onDidHide(() => {
+        closed = true;
+        if (timer) {
+          clearTimeout(timer);
+        }
+        for (const disposable of disposables) {
+          disposable.dispose();
+        }
+        quickPick.dispose();
+      }),
+    );
+    quickPick.show();
+    // An empty query lists the recent sessions of every folder right away.
+    void load('');
+  }
+
+  /**
+   * Opens a session the panel already lists, whichever folder it came from.
+   * `known` is a payload the caller just read; without it the cached list and
+   * the tab cache are the only candidates.
+   */
+  private async openSessionID(id: string, known?: SessionSummary): Promise<void> {
+    const cached =
+      known ?? this.sessions.find((entry) => entry.id === id) ?? this.tabSessions.get(id);
+    if (!cached) {
+      this.tabMissing.add(id);
+      this.post({ type: 'state', state: this.snapshot() });
+      return;
+    }
+    // The list may predate a staged revert, and its payload would clear the
+    // card; only a fresh read decides the revert state. The cached copy is
+    // the fallback when the server cannot answer, and it never touches it.
+    const payload = await resolveOpenSession(
+      cached,
+      () => this.freshSession(id),
+      this.revertEpoch,
+    );
+    this.openTab(payload.session, this.activeDirectory, payload.revertEpoch);
+    this.session = payload.session;
+    // The chat on screen changed: a repeat offer of another chat stays out of
+    // this one, whose composer has its own draft.
+    if (this.pendingSend !== undefined && this.pendingSend.sessionID !== id) {
+      this.pendingSend = undefined;
+    }
+    this.busy = this.tabRunning.has(id) || payload.session.running;
+    this.clearTabNotice(id);
+    await this.persistSession(id);
+    await this.persistTabs();
+    await this.loadMessages();
+    await this.loadPermissions(id);
+    await this.loadQueue(id);
+    this.post({ type: 'state', state: this.snapshot() });
+    this.post({ type: 'closeHistory' });
+    // The opened chat has its own tray; offer the active file again.
+    this.autoContextUri = undefined;
+    void this.syncAutoContext();
+  }
+
+  /**
+   * Opens a session picked by id and folder, outside the cached list: the
+   * palette and the workspace-wide drawer both come here. The folder is
+   * switched first (and pinned) when it differs, so the chat cannot be moved
+   * away by the editor again. A session deleted meanwhile only warns; the
+   * folder must not change for nothing.
+   */
+  private async openSessionFromPalette(directory: string, id: string): Promise<void> {
+    const fresh = await this.freshSession(id);
+    if (!fresh) {
+      void vscode.window.showWarningMessage(
+        'That session was deleted or the OpenCode server cannot be reached.',
+      );
+      return;
+    }
+    if (directory.length > 0 && directory !== this.activeDirectory) {
+      await this.selectDirectory(directory, { pinned: true });
+      // A folder that left the workspace falls back to another one; opening
+      // the session there would put it in a tab strip it does not belong to.
+      if (this.activeDirectory !== directory) {
+        return;
+      }
+    }
+    await this.openSessionID(id, fresh);
   }
 
   /**
@@ -1726,6 +1916,80 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
         this.defaultModel = undefined;
       }
     }
+  }
+
+  /**
+   * Sessions of every workspace folder for one query, merged into one ranked
+   * list. `this.sessions` and the tab state stay untouched: they belong to the
+   * active folder, and `preferredSession`/`restoreTabs` read them.
+   */
+  private async workspaceSessions(query: string): Promise<{
+    readonly sessions: SessionSummary[];
+    readonly failed: number;
+    readonly total: number;
+    readonly error?: unknown;
+  }> {
+    const directories = this.folderDirectories();
+    const targets = directories.length > 0 ? directories : [this.activeDirectory];
+    const client = this.client;
+    if (!client) {
+      return { sessions: [], failed: 0, total: targets.length };
+    }
+    const results = await Promise.allSettled(
+      targets.map((directory) => client.listSessions(directory, query)),
+    );
+    const sources: SessionSource<SessionSummary>[] = [];
+    let failed = 0;
+    let firstError: unknown;
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        sources.push({ directory: targets[index], sessions: result.value });
+        return;
+      }
+      failed += 1;
+      firstError = firstError ?? result.reason;
+    });
+    const ranked = rankSessions(mergeWorkspaceSessions(sources), query);
+    return {
+      sessions: ranked.map((entry) => ({ ...entry.session, directory: entry.directory })),
+      failed,
+      total: targets.length,
+      error: firstError,
+    };
+  }
+
+  /**
+   * The drawer's list for one query and scope. It bumps the epoch, so only the
+   * newest call may use its answer; `undefined` means a newer search has already
+   * taken over.
+   */
+  private async resolveHistorySessions(
+    query: string,
+    scope: HistoryScope,
+  ): Promise<SessionSummary[] | undefined> {
+    const epoch = ++this.historyEpoch;
+    this.historyScope = scope;
+    this.historyQuery = query;
+    if (scope === 'workspace') {
+      const result = await this.workspaceSessions(query);
+      if (epoch !== this.historyEpoch) {
+        return undefined;
+      }
+      // The active folder's `sessions` never holds another folder's row, so the
+      // drawer's list is kept here: a delete needs the title and the refresh.
+      this.historySessions = result.sessions;
+      if (result.total > 0 && result.failed === result.total) {
+        // Nothing was answered: one banner, and the drawer shows an empty list
+        // instead of a stale one.
+        this.fail(result.error);
+      }
+      return result.sessions;
+    }
+    await this.loadSessions(query);
+    if (epoch !== this.historyEpoch) {
+      return undefined;
+    }
+    return this.sessions;
   }
 
   private async loadSessions(search?: string, directory = this.activeDirectory): Promise<void> {
@@ -5035,40 +5299,17 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
       }
       case 'openSession': {
         const id = typeof message.id === 'string' ? message.id : '';
-        const cached =
-          this.sessions.find((entry) => entry.id === id) ?? this.tabSessions.get(id);
-        if (!cached) {
-          this.tabMissing.add(id);
-          this.post({ type: 'state', state: this.snapshot() });
+        const directory = typeof message.directory === 'string' ? message.directory : '';
+        if (directory.length > 0) {
+          // A workspace-wide history row may live outside the active folder,
+          // and even an active-folder row can be missing from the cached list
+          // (the list holds 60 recent sessions of one query). Its folder is
+          // known, so read it fresh and switch first when needed; the tab then
+          // lands in the folder that owns it.
+          await this.openSessionFromPalette(directory, id);
           return;
         }
-        // The list may predate a staged revert, and its payload would clear the
-        // card; only a fresh read decides the revert state. The cached copy is
-        // the fallback when the server cannot answer, and it never touches it.
-        const payload = await resolveOpenSession(
-          cached,
-          () => this.freshSession(id),
-          this.revertEpoch,
-        );
-        this.openTab(payload.session, this.activeDirectory, payload.revertEpoch);
-        this.session = payload.session;
-        // The chat on screen changed: a repeat offer of another chat stays out
-        // of this one, whose composer has its own draft.
-        if (this.pendingSend !== undefined && this.pendingSend.sessionID !== id) {
-          this.pendingSend = undefined;
-        }
-        this.busy = this.tabRunning.has(id) || payload.session.running;
-        this.clearTabNotice(id);
-        await this.persistSession(id);
-        await this.persistTabs();
-        await this.loadMessages();
-        await this.loadPermissions(id);
-        await this.loadQueue(id);
-        this.post({ type: 'state', state: this.snapshot() });
-        this.post({ type: 'closeHistory' });
-        // The opened chat has its own tray; offer the active file again.
-        this.autoContextUri = undefined;
-        void this.syncAutoContext();
+        await this.openSessionID(id);
         return;
       }
       case 'activateTab': {
@@ -5254,7 +5495,11 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
         }
         // The tab menu confirms inline, the history drawer still gets the modal.
         if (message.confirmed !== true) {
-          const target = this.sessions.find((entry) => entry.id === id);
+          // A workspace row is not in the active folder's list; its title comes
+          // from the answer that put it on screen.
+          const target =
+            this.sessions.find((entry) => entry.id === id) ??
+            this.historySessions.find((entry) => entry.id === id);
           const choice = await vscode.window.showWarningMessage(
             `Delete "${target?.title ?? id}"? This also deletes its child sessions.`,
             { modal: true },
@@ -5269,6 +5514,23 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
           this.forgetCompaction(id);
           await this.loadSessions();
           await this.dropTab(id);
+          if (this.historyScope === 'workspace') {
+            // The drawer is showing its own list, not the snapshot's: without a
+            // repeat of the last search the deleted row would stay on screen.
+            const sessions = await this.resolveHistorySessions(
+              this.historyQuery,
+              'workspace',
+            );
+            if (sessions) {
+              this.post({
+                type: 'sessions',
+                sessions,
+                scope: 'workspace',
+                session: this.session,
+                tabs: this.tabEntries(),
+              });
+            }
+          }
         } catch (error) {
           this.fail(error);
         }
@@ -5276,11 +5538,18 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
       }
       case 'searchSessions': {
         const query = typeof message.query === 'string' ? message.query : '';
+        const scope: HistoryScope = message.scope === 'workspace' ? 'workspace' : 'folder';
         const requestId = readRequestId(message);
-        await this.loadSessions(query);
+        const sessions = await this.resolveHistorySessions(query, scope);
+        if (!sessions) {
+          // A newer search, a scope switch or an open session made this answer
+          // stale; only the request that is still the newest may reach the drawer.
+          return;
+        }
         reply.send({
           type: 'sessions',
-          sessions: this.sessions,
+          sessions,
+          scope,
           session: this.session,
           tabs: this.tabEntries(),
           ...(requestId.length > 0 ? { requestId } : {}),
@@ -5478,6 +5747,7 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
       activeDirectory: this.activeDirectory,
       session: this.session ?? undefined,
       sessions: this.sessions,
+      historyScope: this.historyScope,
       tabs: this.tabEntries(),
       messages: this.activeMessages(),
       history: {
@@ -5818,6 +6088,17 @@ export class SidekickViewProvider implements vscode.WebviewViewProvider, vscode.
 
 function readRequestId(message: { [key: string]: unknown }): string {
   return typeof message.requestId === 'string' ? message.requestId : '';
+}
+
+/** Date and time of a session row in the search palette. */
+function sessionDate(timestamp: number): string {
+  if (!timestamp) {
+    return 'unknown date';
+  }
+  return new Date(timestamp).toLocaleString(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
 }
 
 /** The stored editor-tab target, from the serializer or from `PANEL_KEY`. */

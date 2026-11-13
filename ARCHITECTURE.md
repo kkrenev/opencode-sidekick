@@ -81,6 +81,15 @@ A multi-root workspace keeps one chat per folder. `src/shared/workspace-folders.
 - The active editor steers the folder only until the user picks one by hand and while no turn is running in the current folder. Background stream events are routed by session id across `allTabIDs()`, so another folder's tab gets its unread and stale flags without repainting the visible chat.
 - A new chat is a per-folder draft: the webview keys it as `__new__:<directory>` and carries it into the created session.
 
+### Workspace session search
+
+`src/shared/session-search.ts` is the pure model shared by the host and `npm run check:session-search` (part of `npm run compile`): `fuzzyScore` matches a case-insensitive subsequence over the title with contiguous and word-start bonuses, `mergeWorkspaceSessions` concatenates the per-folder answers and keeps the first copy of a session id (the directory the server attached to the session wins over the folder that listed it), and `rankSessions` orders by score, then the newest `updated`, then the order the server returned. A server hit that only matched the text of a message has no title match and stays at the tail with score 0 instead of disappearing.
+
+- `workspaceSessions(query)` in `src/sidekick-view.ts` asks every workspace folder (the active one when there are none) with `Promise.allSettled`, merges and ranks the answers, and never writes `this.sessions` or the tab state: those stay the active folder's list, which `preferredSession`, `restoreTabs` and the replay merge read. A partial failure shows the folders that answered; when every folder fails the host posts one error.
+- The drawer's `searchSessions` request carries `scope: 'folder' | 'workspace'` and is answered by an epoch-guarded `sessions` frame with the same `scope`. The snapshot only carries `historyScope`: the workspace list lives in that frame, and the webview keeps it as `historySessions`, so the drawer list is `historyScope === 'workspace' ? historySessions : sessions` and the active folder's list keeps feeding the chat.
+- `OpenCode: Search Sessions` is a live `QuickPick` (`opencode.sidekick.searchSessions`) debounced at 200 ms. Rows are `title` + folder name + `date · Running|Idle` with `alwaysShow`, so VS Code keeps the host order. Accepting a row reads the session fresh, switches the folder with `pinned: true`, and then opens it through the same `openSessionID` path as the drawer; a session deleted meanwhile only warns and leaves the folder alone.
+- `SessionHistory` shows a `This folder / All folders` segment (`aria-pressed`, hidden with a single folder) and, in workspace mode, the folder name of every row. Opening a row posts its `directory`, which is what makes a cross-folder row land in the tab strip of its own folder.
+
 ## Transcript pagination and windowing
 
 Long sessions are loaded as cursor pages instead of the whole history, so opening a 2000-message chat costs one request and a constant number of DOM nodes.

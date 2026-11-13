@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { post } from '../../shared/api/vscode';
+import type { HistoryScope } from '../../../shared/session-search';
 import { pointAnchor } from '../../shared/ui/Popover';
 import { chipAnchor } from './chipAnchor';
 import type { PopoverState } from './types';
@@ -15,6 +16,8 @@ export interface RenameState {
 export function useSidekickUi() {
   const [historyOpen, setHistoryOpen] = React.useState(false);
   const [historyQuery, setHistoryQuery] = React.useState('');
+  /** Kept between opens: the drawer remembers which folders it searched. */
+  const [historyScope, setHistoryScope] = React.useState<HistoryScope>('folder');
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [popover, setPopover] = React.useState<PopoverState | null>(null);
   const [rename, setRename] = React.useState<RenameState | null>(null);
@@ -137,11 +140,12 @@ export function useSidekickUi() {
       post({
         type: 'searchSessions',
         query: historyQuery,
+        scope: historyScope,
         requestId: `history-${historyRequest.current}`,
       });
     }, 220);
     return () => window.clearTimeout(timer);
-  }, [historyOpen, historyQuery]);
+  }, [historyOpen, historyQuery, historyScope]);
 
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -173,6 +177,8 @@ export function useSidekickUi() {
     setHistoryOpen,
     historyQuery,
     setHistoryQuery,
+    historyScope,
+    setHistoryScope,
     settingsOpen,
     setSettingsOpen,
     popover,

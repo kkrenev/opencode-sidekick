@@ -111,6 +111,16 @@ export function App(): React.ReactElement {
     document.body.dataset.fontSize = data.settings.fontSize;
   }, [data.settings.accent, data.settings.density, data.settings.fontSize]);
 
+  // The host owns the scope, so a reload or a second surface restores it. A
+  // click while the drawer is open is authoritative: a state frame that still
+  // carries the previous scope must not undo it.
+  React.useEffect(() => {
+    if (ui.historyOpen) {
+      return;
+    }
+    ui.setHistoryScope(data.historyScope);
+  }, [data.historyScope]);
+
   const effectiveAgentId = effectiveAgent(data.agent, data.defaults.mode);
   const modelLabel = modelName(data.models, actions.effectiveModel);
   const effortLabel = effortText(data.model, data.defaults, actions.effectiveModelEntry);
@@ -404,10 +414,13 @@ export function App(): React.ReactElement {
 
       {ui.historyOpen ? (
         <SessionHistory
-          sessions={data.sessions}
+          sessions={ui.historyScope === 'workspace' ? data.historySessions : data.sessions}
           current={data.session}
           query={ui.historyQuery}
+          scope={ui.historyScope}
+          folders={data.folders}
           onQuery={ui.setHistoryQuery}
+          onScope={ui.setHistoryScope}
           onOpen={actions.openSession}
           onDelete={actions.deleteSession}
           onNew={actions.newSession}

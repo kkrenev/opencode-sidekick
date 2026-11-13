@@ -328,8 +328,12 @@ export function useChatActions({
   }, [ui]);
 
   const openSession = React.useCallback(
-    (id: string) => {
-      post({ type: 'openSession', id });
+    (id: string, directory?: string) => {
+      post({
+        type: 'openSession',
+        id,
+        ...(directory && directory.length > 0 ? { directory } : {}),
+      });
       ui.setHistoryOpen(false);
       ui.setHistoryQuery('');
     },

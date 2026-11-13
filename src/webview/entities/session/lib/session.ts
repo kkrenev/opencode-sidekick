@@ -1,4 +1,16 @@
-import type { SessionSummary } from '../../../shared/types/domain';
+import type { FolderRef, SessionSummary } from '../../../shared/types/domain';
+
+/** Name of the folder a workspace-wide history row belongs to. */
+export function folderName(
+  session: Pick<SessionSummary, 'directory'>,
+  folders: readonly FolderRef[],
+): string | undefined {
+  const directory = session.directory;
+  if (!directory) {
+    return undefined;
+  }
+  return folders.find((folder) => folder.directory === directory)?.name ?? directory;
+}
 
 export function groupSessions(
   sessions: readonly SessionSummary[],

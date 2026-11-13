@@ -80,6 +80,8 @@ The same chat can sit beside your code: `OpenCode: Open Chat in Editor Tab`, or 
 
 In a multi-root workspace the folder picker in the header switches the panel to another folder. Until you pick one by hand (and while a turn is still running) the panel follows the folder of the active editor. The OpenCode terminal and the `@` file search use the selected folder too.
 
+The history drawer gains a **This folder / All folders** switch when the workspace has more than one folder. **All folders** searches every folder at once, labels each row with its folder, and opening a row from another folder switches the panel there; **This folder** is the list you had before. `OpenCode: Search Sessions` does the same from the palette: type to search titles live, and Enter opens the session in the tab strip of the folder that owns it.
+
 The composer footer has three pickers: model, effort and mode. Type `/` at the start of a message to filter commands, or `@` anywhere to search files and skills. In a palette, use `Up` / `Down` to move, `Enter` or `Tab` to select, and `Escape` to close it. The `...` menu in the header repeats the main panel actions, including the three pickers.
 
 Press `Cmd/Ctrl+F` to search the open chat. The find bar sits between the header and the transcript, so it never covers the composer: type to see `N/M`, use `Enter` / `Shift+Enter` or the arrows to move between matches, and `Escape` to close it and drop the highlight. Jumping to a match opens the collapsed block it lives in and brings the match into view. The query is kept when you close the bar and cleared when you switch sessions; tool input and output are only searched after you turn on **Output**.
@@ -92,6 +94,7 @@ Press `Cmd/Ctrl+F` to search the open chat. The find bar sits between the header
 | `OpenCode: Open Chat in Editor Tab` | |
 | `OpenCode: New Session` | `Cmd+Alt+N` |
 | `OpenCode: Show Session History` | |
+| `OpenCode: Search Sessions` | |
 | `OpenCode: Open Sidekick Settings` | |
 | `OpenCode: Reload OpenCode Sidekick` | |
 | `OpenCode: Open OpenCode UI in Browser` | |

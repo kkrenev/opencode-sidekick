@@ -85,6 +85,11 @@
         "icon": "$(history)"
       },
       {
+        "command": "opencode.sidekick.searchSessions",
+        "title": "Search Sessions",
+        "category": "OpenCode"
+      },
+      {
         "command": "opencode.sidekick.settings",
         "title": "Open Sidekick Settings",
         "category": "OpenCode",
@@ -208,6 +213,9 @@
         },
         {
           "command": "opencode.sidekick.history"
+        },
+        {
+          "command": "opencode.sidekick.searchSessions"
         },
         {
           "command": "opencode.sidekick.settings"
@@ -424,6 +432,7 @@
     "watch:webview": "esbuild src/webview/index.tsx --bundle --outfile=media/main.js --format=iife --target=es2022 --jsx=automatic --define:process.env.NODE_ENV='\"production\"' --watch --log-level=warning",
     "check:architecture": "node scripts/check-architecture.mjs",
     "check:folders": "node scripts/check-workspace-folders.mjs",
+    "check:session-search": "node scripts/check-session-search.mjs",
     "check:usage": "node scripts/check-context-usage.mjs",
     "check:turn-diff": "node scripts/check-turn-diff.mjs",
     "check:open-target": "node scripts/check-open-target.mjs",
@@ -439,7 +448,7 @@
     "check:chat-search": "node scripts/check-chat-search.mjs",
     "check:notifications": "node scripts/check-notifications.mjs",
     "check:connection": "node scripts/check-connection.mjs",
-    "compile": "npm run check:architecture && tsc -p . && npm run check:folders && npm run check:usage && npm run check:turn-diff && npm run check:open-target && npm run check:tool-card && npm run check:message-map && npm run check:revert-api && npm run check:permissions && npm run check:inbox-api && npm run check:editor-context && npm run check:auto-context && npm run check:chat-surfaces && npm run check:chat-panel && npm run check:chat-search && npm run check:notifications && npm run check:connection && tsc -p tsconfig.webview.json && npm run build:webview",
+    "compile": "npm run check:architecture && tsc -p . && npm run check:folders && npm run check:session-search && npm run check:usage && npm run check:turn-diff && npm run check:open-target && npm run check:tool-card && npm run check:message-map && npm run check:revert-api && npm run check:permissions && npm run check:inbox-api && npm run check:editor-context && npm run check:auto-context && npm run check:chat-surfaces && npm run check:chat-panel && npm run check:chat-search && npm run check:notifications && npm run check:connection && tsc -p tsconfig.webview.json && npm run build:webview",
     "watch": "tsc -p . --watch",
     "test": "npm run test:unit",
     "test:unit": "tsc -p tsconfig.test.json && vitest run --config vitest.config.ts && vitest run --config vitest.webview.config.ts",

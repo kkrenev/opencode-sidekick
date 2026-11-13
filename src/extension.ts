@@ -32,6 +32,13 @@ export function activate(context: vscode.ExtensionContext): void {
       await vscode.commands.executeCommand(`workbench.view.extension.${CONTAINER_ID}`);
       await provider.showHistory();
     }),
+    vscode.commands.registerCommand('opencode.sidekick.searchSessions', async () => {
+      // The picker opens in the editor area, but the session it picks lands in
+      // the panel: a fresh window has to show that panel before the picker can
+      // even talk to the server.
+      await vscode.commands.executeCommand(`workbench.view.extension.${CONTAINER_ID}`);
+      await provider.searchSessions();
+    }),
     vscode.commands.registerCommand('opencode.sidekick.settings', async () => {
       await vscode.commands.executeCommand(`workbench.view.extension.${CONTAINER_ID}`);
       provider.openSettings();

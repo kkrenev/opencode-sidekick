@@ -2744,6 +2744,35 @@ select:focus-visible {
   flex: none;
 }
 
+.history-scope {
+  display: flex;
+  flex: none;
+  gap: 3px;
+  margin: 2px 10px 0;
+  padding: 3px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.history-scope .scope-btn {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border-radius: 7px;
+  font-size: 11px;
+  color: var(--dim);
+  transition: background 120ms ease;
+}
+
+.history-scope .scope-btn:hover {
+  color: var(--vscode-foreground);
+}
+
+.history-scope .scope-btn[aria-pressed='true'] {
+  background: var(--surface-3);
+  color: var(--vscode-foreground);
+}
+
 .search input {
   width: 100%;
   padding: 7px 10px;
@@ -2807,6 +2836,18 @@ select:focus-visible {
 
 .session-row .row-sub {
   margin: 0;
+  /* A flex column shrinks its children to their content: the folder could not
+     reach the right edge and a long name pushed past the row. */
+  width: 100%;
+}
+
+.session-row .row-folder {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
 }
 
 .session-row .live {

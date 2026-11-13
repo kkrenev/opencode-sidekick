@@ -1,14 +1,17 @@
 import type { FileEntry, PendingAttachment, SessionSummary, SessionTab } from '../types/domain';
-import type { AppData } from '../types/snapshot';
+import type { AppData, Snapshot } from '../types/snapshot';
 import type { ContextRef } from '../../../shared/editor-context';
 import type { SessionRuntimeState } from '../../../shared/session-runtime';
+import type { HistoryScope } from '../../../shared/session-search';
 import type { UiMessage } from '../types/ui';
 
 export interface IncomingMessage {
   readonly type: string;
-  readonly state?: AppData;
+  readonly state?: Snapshot;
   readonly messages?: readonly UiMessage[];
   readonly sessions?: readonly SessionSummary[];
+  /** `workspace` marks a drawer answer over every folder; `folder` is the default. */
+  readonly scope?: HistoryScope;
   readonly session?: SessionSummary;
   readonly tabs?: readonly SessionTab[];
   readonly runtime?: SessionRuntimeState;

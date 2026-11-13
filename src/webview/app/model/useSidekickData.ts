@@ -14,6 +14,8 @@ const INITIAL_DATA: AppData = {
   activeDirectory: '',
   session: null,
   sessions: [],
+  historyScope: 'folder',
+  historySessions: [],
   tabs: [],
   messages: [],
   history: { hasMoreOlder: false, loadingOlder: false },
@@ -82,7 +84,11 @@ export function useSidekickData({
         case 'sessions':
           setData((previous) => ({
             ...previous,
-            sessions: message.sessions ?? previous.sessions,
+            // A workspace answer belongs to the drawer's own list: the active
+            // folder's `sessions` must keep feeding the tab strip and the chat.
+            ...(message.scope === 'workspace'
+              ? { historySessions: message.sessions ?? previous.historySessions }
+              : { sessions: message.sessions ?? previous.sessions }),
             session: message.session ?? previous.session,
             tabs: message.tabs ?? previous.tabs,
           }));

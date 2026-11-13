@@ -15,6 +15,7 @@ import type { SessionRuntimeState } from '../../../shared/session-runtime';
 import type { PermissionRequest, SavedPermission } from '../../../shared/permission';
 import type { QueueItem } from '../../../shared/inbox';
 import type { TurnDiffSummary } from '../../../shared/turn-diff';
+import type { HistoryScope } from '../../../shared/session-search';
 import type { UiMessage } from './ui';
 
 export interface HistoryState {
@@ -60,6 +61,8 @@ export interface Snapshot {
   readonly activeDirectory: string;
   readonly session: SessionSummary | null;
   readonly sessions: readonly SessionSummary[];
+  /** Which folders the history drawer searched; both surfaces share it. */
+  readonly historyScope: HistoryScope;
   readonly tabs: readonly SessionTab[];
   readonly messages: readonly UiMessage[];
   readonly history: HistoryState;
@@ -97,4 +100,11 @@ export interface Snapshot {
   readonly savedPermissionsHint: string | null;
 }
 
-export type AppData = Snapshot;
+export type AppData = Snapshot & {
+  /**
+   * Last workspace-wide history answer. Only a `sessions` frame with
+   * `scope: 'workspace'` fills it, so the active folder's `sessions` keeps
+   * feeding the chat and the tab strip; a snapshot never carries this list.
+   */
+  readonly historySessions: readonly SessionSummary[];
+};
